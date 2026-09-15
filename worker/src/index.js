@@ -1,0 +1,268 @@
+const DEFAULT_DEVICE = "sensor-node-01";
+const DEFAULT_METRIC = "cpu_temperature";
+const DEFAULT_HISTORY_LIMIT = 288;
+const MAX_HISTORY_LIMIT = 2016;
+const MAX_BODY_BYTES = 4096;
+const DEFAULT_RETENTION_DAYS = 30;
+
+const validName = (value) =>
+  typeof value === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value);
+
+const validUnit = (value) =>
+  typeof value === "string" && /^[A-Za-z0-9%_+./\u00b0-]{0,16}$/u.test(value);
+
+function allowedOrigins(env) {
+  return (env.CORS_ORIGINS || "https://oliwertwister.github.io")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function corsHeaders(request, env) {
+  const origin = request.headers.get("origin");
+  const allowed = allowedOrigins(env);
+  if (!origin || !allowed.includes(origin)) return {};
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-headers": "content-type",
+    "access-control-max-age": "86400",
+    vary: "Origin",
+  };
+}
+
+function json(request, env, data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      ...corsHeaders(request, env),
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      ...extraHeaders,
+    },
+  });
+}
+
+function bearerToken(request) {
+  const match = /^Bearer ([A-Za-z0-9_-]{32,256})$/.exec(
+    request.headers.get("authorization") || "",
+  );
+  return match?.[1] || null;
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function retentionDays(env) {
+  const configured = Number(env.RETENTION_DAYS);
+  if (!Number.isInteger(configured) || configured < 1 || configured > 365) {
+    return DEFAULT_RETENTION_DAYS;
+  }
+  return configured;
+}
+
+function normalizedTimestamp(value, env) {
+  if (typeof value !== "string") return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+
+  const now = Date.now();
+  const oldest = now - retentionDays(env) * 24 * 60 * 60 * 1000;
+  if (timestamp < oldest || timestamp > now + 5 * 60 * 1000) return null;
+  return new Date(timestamp).toISOString();
+}
+
+async function parseIngestBody(request) {
+  if (!(request.headers.get("content-type") || "").toLowerCase().startsWith("application/json")) {
+    return { error: "content_type_must_be_json", status: 415 };
+  }
+
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+    return { error: "payload_too_large", status: 413 };
+  }
+
+  try {
+    const body = JSON.parse(text);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return { error: "invalid_payload", status: 400 };
+    }
+    return { body };
+  } catch {
+    return { error: "invalid_json", status: 400 };
+  }
+}
+
+function historyLimit(value) {
+  if (value === null) return DEFAULT_HISTORY_LIMIT;
+  if (!/^\d+$/.test(value)) return null;
+  return Math.min(Math.max(Number(value), 1), MAX_HISTORY_LIMIT);
+}
+
+async function ingest(request, env) {
+  const token = bearerToken(request);
+  if (!token) return json(request, env, { error: "unauthorized" }, 401);
+
+  const tokenHash = await sha256Hex(token);
+  const credential = await env.DB.prepare(
+    "SELECT device_id FROM devices WHERE token_hash = ? AND enabled = 1",
+  )
+    .bind(tokenHash)
+    .first();
+  if (!credential) return json(request, env, { error: "unauthorized" }, 401);
+
+  const parsed = await parseIngestBody(request);
+  if (parsed.error) {
+    return json(request, env, { error: parsed.error }, parsed.status);
+  }
+
+  const body = parsed.body;
+  const recordedAt = normalizedTimestamp(body.recorded_at, env);
+  if (
+    !validName(body.device_id) ||
+    body.device_id !== credential.device_id ||
+    !validName(body.metric) ||
+    typeof body.value !== "number" ||
+    !Number.isFinite(body.value) ||
+    Math.abs(body.value) > 1e12 ||
+    !validUnit(body.unit || "") ||
+    !recordedAt
+  ) {
+    return json(request, env, { error: "invalid_payload" }, 400);
+  }
+
+  const unit = body.unit || "";
+  const inserted = await env.DB.prepare(
+    "INSERT OR IGNORE INTO readings(device_id, metric, value, unit, recorded_at) VALUES(?, ?, ?, ?, ?)",
+  )
+    .bind(body.device_id, body.metric, body.value, unit, recordedAt)
+    .run();
+
+  await env.DB.prepare(
+    `INSERT INTO latest_readings(device_id, metric, value, unit, recorded_at)
+     VALUES(?, ?, ?, ?, ?)
+     ON CONFLICT(device_id, metric) DO UPDATE SET
+       value = excluded.value,
+       unit = excluded.unit,
+       recorded_at = excluded.recorded_at
+     WHERE excluded.recorded_at >= latest_readings.recorded_at`,
+  )
+    .bind(body.device_id, body.metric, body.value, unit, recordedAt)
+    .run();
+
+  const cutoff = new Date(
+    Date.now() - retentionDays(env) * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  await env.DB.prepare(
+    "DELETE FROM readings WHERE device_id = ? AND metric = ? AND recorded_at < ?",
+  )
+    .bind(body.device_id, body.metric, cutoff)
+    .run();
+
+  const stored = (inserted.meta?.changes || 0) > 0;
+  return json(
+    request,
+    env,
+    { ok: true, stored, device_id: body.device_id, recorded_at: recordedAt },
+    stored ? 201 : 200,
+  );
+}
+
+async function history(request, env, url) {
+  const device = url.searchParams.get("device") || DEFAULT_DEVICE;
+  const metric = url.searchParams.get("metric") || DEFAULT_METRIC;
+  const limit = historyLimit(url.searchParams.get("limit"));
+  if (!validName(device) || !validName(metric) || limit === null) {
+    return json(request, env, { error: "invalid_query" }, 400);
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT device_id, metric, value, unit, recorded_at
+     FROM readings
+     WHERE device_id = ? AND metric = ?
+     ORDER BY recorded_at DESC
+     LIMIT ?`,
+  )
+    .bind(device, metric, limit)
+    .all();
+
+  return json(request, env, {
+    device_id: device,
+    metric,
+    readings: results.reverse(),
+  });
+}
+
+async function latest(request, env, url) {
+  const device = url.searchParams.get("device") || DEFAULT_DEVICE;
+  const metric = url.searchParams.get("metric") || DEFAULT_METRIC;
+  if (!validName(device) || !validName(metric)) {
+    return json(request, env, { error: "invalid_query" }, 400);
+  }
+
+  const reading = await env.DB.prepare(
+    `SELECT device_id, metric, value, unit, recorded_at
+     FROM latest_readings
+     WHERE device_id = ? AND metric = ?`,
+  )
+    .bind(device, metric)
+    .first();
+  return json(request, env, { reading: reading || null });
+}
+
+async function devices(request, env) {
+  const { results } = await env.DB.prepare(
+    `SELECT l.device_id, d.label, l.metric, l.value, l.unit, l.recorded_at AS last_seen
+     FROM latest_readings l
+     JOIN devices d ON d.device_id = l.device_id
+     WHERE d.enabled = 1
+     ORDER BY d.label, l.metric`,
+  ).all();
+  return json(request, env, { devices: results });
+}
+
+export default {
+  async fetch(request, env) {
+    try {
+      const url = new URL(request.url);
+
+      if (request.method === "OPTIONS") {
+        const headers = corsHeaders(request, env);
+        if (!headers["access-control-allow-origin"]) {
+          return new Response(null, { status: 403 });
+        }
+        return new Response(null, { status: 204, headers });
+      }
+
+      if (url.pathname === "/health" && request.method === "GET") {
+        await env.DB.prepare("SELECT 1 AS ok").first();
+        return json(request, env, { service: "read-sensor-api", ok: true });
+      }
+      if (url.pathname === "/api/v1/ingest" && request.method === "POST") {
+        return await ingest(request, env);
+      }
+      if (url.pathname === "/api/v1/history" && request.method === "GET") {
+        return await history(request, env, url);
+      }
+      if (url.pathname === "/api/v1/latest" && request.method === "GET") {
+        return await latest(request, env, url);
+      }
+      if (url.pathname === "/api/v1/devices" && request.method === "GET") {
+        return await devices(request, env);
+      }
+
+      return json(request, env, { error: "not_found" }, 404);
+    } catch (error) {
+      console.error("request_failed", error);
+      return json(request, env, { error: "internal_error" }, 500);
+    }
+  },
+};

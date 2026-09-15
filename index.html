@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.invalid; upgrade-insecure-requests"
+    >
+    <title>read-sensor</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQ3ynhFQ8EW/MZXY6jHMlY9g/l7LCvM="
+      crossorigin="anonymous"
+    >
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>read-sensor</h1>
+        <p class="subtitle">Outbound-only device telemetry</p>
+      </div>
+      <div class="header-status">
+        <label for="deviceSelect">Device</label>
+        <select id="deviceSelect" aria-label="Telemetry device"></select>
+        <span id="live" class="status" role="status">Connecting…</span>
+      </div>
+    </header>
+
+    <nav aria-label="Dashboard sections">
+      <button type="button" data-tab="overview" class="active">Overview</button>
+      <button type="button" data-tab="cpu">CPU Temperature</button>
+      <button type="button" data-tab="weather">Berlin Weather</button>
+      <button type="button" data-tab="map">Berlin Map</button>
+      <button type="button" data-tab="system">Sensor / System</button>
+    </nav>
+
+    <main>
+      <section id="overview" class="tab active">
+        <h2>Overview</h2>
+        <div class="cards">
+          <article>
+            <small>CPU temperature</small>
+            <strong id="cpuNow">—</strong>
+          </article>
+          <article>
+            <small>Sensor age</small>
+            <strong id="age">—</strong>
+          </article>
+          <article>
+            <small>Berlin</small>
+            <strong id="weatherNow">—</strong>
+          </article>
+        </div>
+      </section>
+
+      <section id="cpu" class="tab">
+        <h2>CPU Temperature</h2>
+        <canvas id="chart" width="900" height="360"></canvas>
+        <p class="muted">Up to 24 hours at the five-minute collection interval.</p>
+      </section>
+
+      <section id="weather" class="tab">
+        <h2>Berlin Weather</h2>
+        <div id="weatherDetail">Loading weather…</div>
+      </section>
+
+      <section id="map" class="tab">
+        <h2>Berlin Map</h2>
+        <div id="leafletMap"></div>
+      </section>
+
+      <section id="system" class="tab">
+        <h2>Sensor / System</h2>
+        <pre id="raw">No sensor data yet.</pre>
+        <dl class="system-details">
+          <div><dt>API</dt><dd><a id="apiLink" rel="noreferrer">—</a></dd></div>
+          <div><dt>Transport</dt><dd>One-shot outbound HTTPS from each device</dd></div>
+          <div><dt>Storage</dt><dd>Cloudflare D1, with 30-day retention</dd></div>
+          <div><dt>Device exposure</dt><dd>No listener, inbound port, tunnel, or public address</dd></div>
+        </dl>
+      </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin="anonymous"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

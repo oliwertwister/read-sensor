@@ -1,0 +1,11 @@
+{
+  "name": "read-sensor-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "4.132.0"
+  }
+}

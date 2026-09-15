@@ -1,0 +1,16 @@
+{
+  "name": "read-sensor-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-15",
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "CORS_ORIGINS": "https://oliwertwister.github.io",
+    "RETENTION_DAYS": "30"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "read-sensor",
+    "database_id": "3e6ea29d-fcb5-4b1e-be6f-62765a9f32b5"
+  }]
+}

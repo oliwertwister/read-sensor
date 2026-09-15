@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+node_modules/
+*.log
+sensor.log
+assets
+
+sensor-latest.json
+history.json
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+collector.env
+worker/.wrangler/
