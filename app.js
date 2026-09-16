@@ -251,6 +251,25 @@ async function loadAviationWeather() {
   } catch(e) { console.error("aviation_weather_failed",e); root.textContent="BER aviation weather unavailable."; }
 }
 
+const ICON_PRODUCTS = {
+  win: { label: "10 m wind", suffix: "000010" },
+  ttc: { label: "2 m temperature", suffix: "999999" },
+  rsa: { label: "6 h accumulated precipitation", suffix: "999999" },
+};
+function updateIconChart() {
+  const product = $("iconProduct").value; const period = $("iconPeriod").value; const meta = ICON_PRODUCTS[product];
+  const base = "https://opendata.dwd.de/weather/charts/forecasts/icon/eu_nest/ce/";
+  const name = `Z__C_EDZW_LATEST_nwv01%2Cicoeu_${product}_ce_N_${period}_${meta.suffix}_LATEST_WV11.png`;
+  $("iconChart").src = base + name;
+  $("iconChart").alt = `DWD ICON-EU ${meta.label} forecast for Central Europe`;
+  $("iconCaption").textContent = `${meta.label} · ${$("iconPeriod").selectedOptions[0].textContent} · DWD ICON-EU. The PNG itself contains model initialization and valid times.`;
+}
+function initIconCharts() {
+  $("iconProduct").addEventListener("change", updateIconChart);
+  $("iconPeriod").addEventListener("change", updateIconChart);
+  updateIconChart();
+}
+
 function initTabs() {
   document.querySelectorAll("nav button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -278,6 +297,7 @@ function initMap() {
 async function init() {
   initTabs();
   initMap();
+  initIconCharts();
   const healthUrl = apiUrl("/health");
   $("apiLink").href = healthUrl;
   $("apiLink").textContent = healthUrl.origin;

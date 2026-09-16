@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
     <link rel="stylesheet" href="leaflet.css?v=1.9.4-local">
-    <link rel="stylesheet" href="style.css?v=aviation-1">
+    <link rel="stylesheet" href="style.css?v=icon-model-1">
   </head>
   <body>
     <header>
@@ -67,6 +67,16 @@
         <h2>BER Aviation Weather</h2>
         <p class="muted">Official aviation reports for Berlin Brandenburg Airport · EDDB</p>
         <div id="aviationDetail">Loading METAR and TAF…</div>
+        <section class="model-panel" aria-labelledby="iconTitle">
+          <div class="model-heading">
+            <div><h3 id="iconTitle">DWD ICON-EU model charts</h3><p class="muted">Static numerical forecast maps · Central Europe · latest DWD model run</p></div>
+            <div class="model-controls">
+              <label>Field <select id="iconProduct"><option value="win">10 m wind</option><option value="ttc">2 m temperature</option><option value="rsa">6 h precipitation</option></select></label>
+              <label>Forecast <select id="iconPeriod"><option value="006012">+6 / +12 h</option><option value="018024">+18 / +24 h</option><option value="030036">+30 / +36 h</option><option value="042048">+42 / +48 h</option></select></label>
+            </div>
+          </div>
+          <figure class="model-figure"><img id="iconChart" alt="DWD ICON-EU numerical weather forecast chart"><figcaption id="iconCaption" class="muted"></figcaption></figure>
+        </section>
       </section>
 
       <section id="map" class="tab">
@@ -93,6 +103,6 @@
       crossorigin="anonymous"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=aviation-1"></script>
+    <script src="app.js?v=icon-model-1"></script>
   </body>
 </html>
