@@ -897,3 +897,12 @@ a { color: #58a6ff; }
   .satellite-figure figcaption span { text-align:left; }
   .satellite-figure img { min-height:220px; }
 }
+.satellite-about { margin-top:12px; padding:16px 18px; border:1px solid #30363d; border-radius:12px; background:#161b22; }
+.satellite-about h3 { margin:0 0 8px; font-size:1rem; }
+.satellite-about p { margin:0 0 14px; color:#8b949e; font-size:.82rem; line-height:1.5; }
+.satellite-about-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.satellite-about-grid > div { padding:10px 11px; border:1px solid #30363d; border-radius:8px; background:#0d1117; }
+.satellite-about-grid small,.satellite-about-grid strong { display:block; }
+.satellite-about-grid small { margin-bottom:4px; }
+.satellite-about-grid strong { font-size:.78rem; line-height:1.35; }
+@media (max-width:700px) { .satellite-about-grid { grid-template-columns:1fr 1fr; } }

@@ -112,7 +112,7 @@ def decorate(image: Image.Image, title: str, observed_at: str) -> Image.Image:
         font=font(19), fill=(220, 228, 238), anchor="ra",
     )
     draw.text(
-        (22, height - 18), "Europe · WGS84 grid · source: EUMETSAT EUMETView",
+        (22, height - 18), "© EUMETSAT / EUMETView · grid overlay: read-sensor",
         font=font(16), fill=(174, 184, 197), anchor="ls",
     )
     return Image.alpha_composite(canvas, overlay).convert("RGB")
