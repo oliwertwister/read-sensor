@@ -2,12 +2,15 @@
 set -eu
 
 ROOT="${0:A:h}"
+RUNTIME="$HOME/.local/lib/read-sensor"
 LABEL="io.github.oliwertwister.read-sensor"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_DIR="$HOME/Library/Logs/read-sensor"
 DOMAIN="gui/$(id -u)"
 
-mkdir -p "${PLIST:h}" "$LOG_DIR"
+mkdir -p "$RUNTIME" "${PLIST:h}" "$LOG_DIR"
+cp "$ROOT/collector.py" "$ROOT/publish.sh" "$RUNTIME/"
+chmod 700 "$RUNTIME/collector.py" "$RUNTIME/publish.sh"
 
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -19,7 +22,7 @@ cat > "$PLIST" <<PLIST
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>$ROOT/publish.sh</string>
+    <string>$RUNTIME/publish.sh</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
@@ -44,3 +47,4 @@ launchctl bootstrap "$DOMAIN" "$PLIST"
 launchctl kickstart -k "$DOMAIN/$LABEL"
 
 echo "Installed $LABEL (outbound HTTPS every 300 seconds)."
+echo "Runtime copy: $RUNTIME"
