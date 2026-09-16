@@ -19,6 +19,6 @@ The sensor computer makes one-shot outbound HTTPS requests to a Cloudflare Worke
 
 ## Local geometry
 
-The Berlin Map can display GeoJSON/JSON, GeoPackage (`.gpkg`), and Shapefiles either directly (`.shp` with optional matching `.dbf`, `.prj`, `.cpg`) or packaged as `.zip` / `.rar`. Geometry is parsed entirely in the browser and is never uploaded. Safety limits are 5 MiB per selected file, 20 MiB after archive extraction, and 20,000 features.
+The Berlin Map can display GeoJSON/JSON, GeoPackage (`.gpkg`), and Shapefiles either directly (`.shp` with optional matching `.dbf`, `.prj`, `.cpg`) or packaged as `.zip` / `.rar`. Geometry is parsed entirely in the browser and is never uploaded. Safety limits are 10 MiB per selected file, 20 MiB after archive extraction, and 20,000 features.
 
 Vendored parser notices are in `vendor/THIRD_PARTY_NOTICES.md`.

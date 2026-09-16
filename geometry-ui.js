@@ -56,7 +56,7 @@
   function clearGeometry() {
     group?.clearLayers();
     combinedBounds = null;
-    $("geometryStatus").textContent = "GeoJSON · GPKG · SHP (+ DBF/PRJ) · ZIP/RAR · max 5 MiB";
+    $("geometryStatus").textContent = "GeoJSON · GPKG · SHP (+ DBF/PRJ) · ZIP/RAR · max 10 MiB";
     updateButtons();
   }
 

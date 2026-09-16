@@ -1,7 +1,7 @@
 "use strict";
 
 (() => {
-  const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+  const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
   const MAX_EXPANDED_BYTES = 20 * 1024 * 1024;
   const MAX_FEATURES = 20000;
   const decoder = new TextDecoder("utf-8");
@@ -214,7 +214,7 @@
   async function load(file) {
     if (!file) return { datasets: [], featureCount: 0 };
     if (file.size > MAX_UPLOAD_BYTES) {
-      throw new Error(`File is ${(file.size / 1048576).toFixed(1)} MiB; maximum is 5 MiB.`);
+      throw new Error(`File is ${(file.size / 1048576).toFixed(1)} MiB; maximum is 10 MiB.`);
     }
     const ext = extension(file.name);
     const buffer = await file.arrayBuffer();
