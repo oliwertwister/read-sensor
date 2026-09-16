@@ -101,7 +101,6 @@
   }
 
   function init() {
-    $("geometryAdd").addEventListener("click", () => $("geometryFile").click());
     $("geometryFit").addEventListener("click", fitGeometry);
     $("geometryClear").addEventListener("click", clearGeometry);
     $("geometryFile").addEventListener("change", async (event) => {

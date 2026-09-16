@@ -843,6 +843,9 @@ a { color: #58a6ff; }
 /* Local geometry upload */
 .geometry-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
 .geometry-toolbar button { padding:8px 12px; }
+.geometry-file-button { position:relative; overflow:hidden; display:inline-flex; align-items:center; border:1px solid #30363d; border-radius:8px; padding:8px 12px; white-space:nowrap; cursor:pointer; color:#e6edf3; background:#161b22; }
+.geometry-file-button:hover { border-color:#8b949e; }
+.geometry-file-button input[type="file"] { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
 .geometry-toolbar button:disabled { opacity:.45; cursor:not-allowed; }
 .geometry-toolbar #geometryStatus { margin-left:4px; font-size:.82rem; }
 .geometry-popup { max-width:380px; overflow:auto; }
@@ -852,7 +855,7 @@ a { color: #58a6ff; }
 
 @media(max-width:680px) {
   .geometry-toolbar { display:grid; grid-template-columns:1fr 1fr 1fr; }
-  .geometry-toolbar button { width:100%; }
+  .geometry-toolbar button,.geometry-toolbar .geometry-file-button { width:100%; justify-content:center; }
   .geometry-toolbar #geometryStatus { grid-column:1 / -1; margin:2px 0 0; }
 }
 
