@@ -331,6 +331,57 @@ function initIconCharts() {
   updateIconChart();
 }
 
+
+let satelliteMeta = null;
+let satelliteProduct = "geocolour";
+
+function satelliteTime(value) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date(value)) + " UTC";
+}
+
+function renderSatellite() {
+  if (!satelliteMeta) return;
+  const product = satelliteMeta.products?.[satelliteProduct];
+  if (!product) return;
+  document.querySelectorAll("[data-sat-product]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.satProduct === satelliteProduct);
+  });
+  const version = encodeURIComponent(product.observed_at || satelliteMeta.generated_at || Date.now());
+  $("satelliteImage").src = `satellite/${product.file}?v=${version}`;
+  $("satelliteTitle").textContent = `${satelliteMeta.platform} · ${satelliteMeta.instrument} · ${product.title}`;
+  $("satelliteCaption").textContent = product.subtitle;
+  $("satObserved").textContent = satelliteTime(product.observed_at);
+  $("satCadence").textContent = `~${satelliteMeta.nominal_cadence_minutes || 10} min`;
+  const ageMin = Math.max(0, Math.round((Date.now() - new Date(product.observed_at).getTime()) / 60000));
+  $("satelliteFreshness").textContent = `Latest · ${ageMin} min old`;
+}
+
+async function loadSatellite() {
+  try {
+    const response = await fetch(`satellite/latest.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    satelliteMeta = await response.json();
+    renderSatellite();
+  } catch (error) {
+    console.error("satellite_failed", error);
+    $("satelliteFreshness").textContent = "Satellite render unavailable";
+  }
+}
+
+function initSatellite() {
+  document.querySelectorAll("[data-sat-product]").forEach((button) => {
+    button.addEventListener("click", () => {
+      satelliteProduct = button.dataset.satProduct;
+      renderSatellite();
+    });
+  });
+  loadSatellite();
+}
+
 function initTabs() {
   document.querySelectorAll("nav button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -446,6 +497,7 @@ function initMap() {
 async function init() {
   initTabs();
   initIconCharts();
+  initSatellite();
   window.GeometryUI?.init();
   const healthUrl = apiUrl("/health");
   $("apiLink").href = healthUrl;
@@ -463,6 +515,7 @@ async function init() {
   setInterval(pollLatest, 60000);
   setInterval(loadWeather, 300000);
   setInterval(loadDevices, 300000);
+  setInterval(loadSatellite, 300000);
 }
 
 init();

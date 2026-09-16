@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=geometry-4">
+    <link rel="stylesheet" href="style.css?v=satellite-1">
   </head>
   <body>
     <header>
@@ -28,6 +28,7 @@
       <button type="button" data-tab="cpu">CPU Temperature</button>
       <button type="button" data-tab="weather">Berlin Weather</button>
       <button type="button" data-tab="aviation">BER Aviation Weather</button>
+      <button type="button" data-tab="satellite">Satellite</button>
       <button type="button" data-tab="map">Berlin Map</button>
       <button type="button" data-tab="system">Sensor / System</button>
     </nav>
@@ -81,6 +82,29 @@
         </section>
       </section>
 
+      <section id="satellite" class="tab">
+        <div class="satellite-heading">
+          <div><h2>Meteosat · Europe</h2><p class="muted">MTG-I · FCI · latest autonomous cloud imagery</p></div>
+          <div id="satelliteFreshness" class="satellite-freshness">Waiting for cloud render…</div>
+        </div>
+        <div class="satellite-toolbar">
+          <div class="satellite-products" role="group" aria-label="Satellite product">
+            <button type="button" data-sat-product="geocolour" class="active">Geo Colour</button>
+            <button type="button" data-sat-product="ir105">IR 10.5 µm</button>
+          </div>
+          <div class="satellite-stats">
+            <div><small>Observed</small><strong id="satObserved">—</strong></div>
+            <div><small>Cadence</small><strong id="satCadence">—</strong></div>
+            <div><small>Pipeline</small><strong>Cloud</strong></div>
+          </div>
+        </div>
+        <figure class="satellite-figure">
+          <img id="satelliteImage" alt="Latest Meteosat satellite view over Europe">
+          <figcaption><strong id="satelliteTitle">Latest satellite image</strong><span id="satelliteCaption" class="muted"></span></figcaption>
+        </figure>
+        <p class="muted satellite-foot">Rendered in the cloud from EUMETSAT EUMETView data. The scheduled job and this image continue updating when the sensor Mac and your phone are offline.</p>
+      </section>
+
       <section id="map" class="tab">
         <div class="map-heading">
           <div><h2>Berlin Map</h2><p class="muted">OpenStreetMap · Berlin and surroundings · WGS84 coordinate grid</p></div>
@@ -123,6 +147,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=grid-density-1"></script>
+    <script src="app.js?v=satellite-1"></script>
   </body>
 </html>

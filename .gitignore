@@ -13,3 +13,5 @@ history.json
 .dev.vars.*
 collector.env
 worker/.wrangler/
+
+satellite/output/

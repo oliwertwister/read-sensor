@@ -8,6 +8,7 @@ A zero-cost prototype for publishing outbound-only device telemetry to a static 
 - **CPU Temperature** — D1-backed temperature history with automatic refresh.
 - **Berlin Weather** — general Berlin weather from Open-Meteo.
 - **BER Aviation Weather** — EDDB METAR/TAF plus DWD ICON forecast charts.
+- **Satellite** — autonomous MTG-I/FCI Europe imagery with WGS84 grid, refreshed by GitHub Actions every 15 minutes.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid, Berlin and BER markers, and local geometry loading.
 - **Sensor / System** — latest telemetry record and architecture details.
 
@@ -22,3 +23,7 @@ The sensor computer makes one-shot outbound HTTPS requests to a Cloudflare Worke
 The Berlin Map can display GeoJSON/JSON, GeoPackage (`.gpkg`), and Shapefiles either directly (`.shp` with optional matching `.dbf`, `.prj`, `.cpg`) or packaged as `.zip` / `.rar`. Geometry is parsed entirely in the browser and is never uploaded. Safety limits are 10 MiB per selected file, 20 MiB after archive extraction, and 20,000 features.
 
 Vendored parser notices are in `vendor/THIRD_PARTY_NOTICES.md`.
+
+## Autonomous satellite path
+
+The satellite renderer runs on GitHub-hosted Linux, reads the latest MTG-I/FCI imagery from EUMETSAT EUMETView, overlays a coordinate grid and timestamp, then deploys WebP images with the site. It is independent of the sensor Mac and browser clients. See `satellite/README.md`.

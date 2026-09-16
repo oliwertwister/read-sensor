@@ -869,3 +869,31 @@ a { color: #58a6ff; }
 .map-frame.geometry-drop-active { outline:3px solid #2ea043; outline-offset:3px; }
 .map-frame.geometry-drop-active::after { content:"Drop geometry files here"; position:absolute; inset:14px; z-index:1001; display:grid; place-items:center; border:2px dashed #2ea043; border-radius:10px; background:rgba(13,17,23,.78); color:#f0f6fc; font-weight:700; pointer-events:none; }
 @media(max-width:680px){ .cpu-heading{align-items:flex-start;flex-direction:column}.cpu-timezone{white-space:normal} }
+
+/* Autonomous Meteosat presentation */
+.satellite-heading { display:flex; justify-content:space-between; align-items:end; gap:20px; margin-bottom:16px; }
+.satellite-heading h2,.satellite-heading p { margin:0; }
+.satellite-heading p { margin-top:5px; }
+.satellite-freshness { padding:8px 11px; border:1px solid #30363d; border-radius:999px; color:#3fb950; background:#161b22; font-size:.82rem; white-space:nowrap; }
+.satellite-toolbar { display:flex; justify-content:space-between; align-items:end; gap:18px; margin-bottom:14px; }
+.satellite-products { display:flex; gap:8px; flex-wrap:wrap; }
+.satellite-products button { padding:8px 12px; }
+.satellite-products button.active { border-color:#2ea043; background:#238636; }
+.satellite-stats { display:grid; grid-template-columns:repeat(3,minmax(110px,1fr)); gap:8px; min-width:min(100%,430px); }
+.satellite-stats > div { padding:9px 11px; border:1px solid #30363d; border-radius:8px; background:#161b22; }
+.satellite-stats small { margin:0 0 3px; font-size:.72rem; }
+.satellite-stats strong { display:block; font-size:.88rem; font-weight:600; }
+.satellite-figure { margin:0; border:1px solid #30363d; border-radius:12px; overflow:hidden; background:#0d1117; }
+.satellite-figure img { display:block; width:100%; min-height:320px; object-fit:contain; background:#05080c; }
+.satellite-figure figcaption { display:flex; justify-content:space-between; gap:16px; padding:11px 14px; background:#161b22; }
+.satellite-figure figcaption span { text-align:right; }
+.satellite-foot { margin:10px 2px 0; font-size:.82rem; }
+@media(max-width:760px){
+  .satellite-heading,.satellite-toolbar { align-items:stretch; flex-direction:column; }
+  .satellite-freshness { width:max-content; max-width:100%; white-space:normal; }
+  .satellite-stats { grid-template-columns:1fr 1fr; min-width:0; }
+  .satellite-stats > div:last-child { grid-column:1 / -1; }
+  .satellite-figure figcaption { flex-direction:column; }
+  .satellite-figure figcaption span { text-align:left; }
+  .satellite-figure img { min-height:220px; }
+}
