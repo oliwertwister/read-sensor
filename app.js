@@ -353,12 +353,29 @@ function initTabs() {
   });
 }
 
-function mapGridStep(span) {
-  if (span > 2) return 0.5;
-  if (span > 1) return 0.2;
-  if (span > 0.45) return 0.1;
-  if (span > 0.2) return 0.05;
-  return 0.02;
+function mapGridStep(span, pixels, minPixelSpacing) {
+  const maxIntervals = Math.max(2, Math.floor(pixels / minPixelSpacing));
+  const target = Math.max(span / maxIntervals, 0.00001);
+  const magnitude = 10 ** Math.floor(Math.log10(target));
+  for (const factor of [1, 2, 2.5, 5, 10]) {
+    const step = factor * magnitude;
+    if (step >= target - 1e-12) return step;
+  }
+  return 10 * magnitude;
+}
+
+function formatLongitude(value, step) {
+  let wrapped = ((value + 180) % 360 + 360) % 360 - 180;
+  if (Math.abs(wrapped) < 1e-10) wrapped = 0;
+  const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
+  if (Math.abs(Math.abs(wrapped) - 180) < 1e-8) return `180°`;
+  return `${Math.abs(wrapped).toFixed(decimals)}°${wrapped < 0 ? "W" : wrapped > 0 ? "E" : ""}`;
+}
+
+function formatLatitude(value, step) {
+  const decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0;
+  if (Math.abs(value) < 1e-10) return `0°`;
+  return `${Math.abs(value).toFixed(decimals)}°${value < 0 ? "S" : "N"}`;
 }
 
 function refreshMapDecorations() {
@@ -367,22 +384,49 @@ function refreshMapDecorations() {
   const bounds = map.getBounds();
   const size = map.getSize();
   if (!size.x || !size.y) return;
-  const latStep = mapGridStep(bounds.getNorth() - bounds.getSouth());
-  const lonStep = mapGridStep(bounds.getEast() - bounds.getWest());
+
+  const latSpan = Math.max(0.000001, bounds.getNorth() - bounds.getSouth());
+  const lonSpan = Math.max(0.000001, bounds.getEast() - bounds.getWest());
+  // Keep labels readable at every zoom. The grid density is driven by screen
+  // space, not by a fixed geographic interval.
+  const latStep = mapGridStep(latSpan, size.y, 58);
+  const lonStep = mapGridStep(lonSpan, size.x, 92);
+
   state.mapGrid.clearLayers();
   const lonRoot = $("lonLabels"); const latRoot = $("latLabels");
   lonRoot.replaceChildren(); latRoot.replaceChildren();
-  for (let lon = Math.ceil(bounds.getWest()/lonStep)*lonStep; lon <= bounds.getEast()+1e-9; lon += lonStep) {
-    L.polyline([[bounds.getSouth(),lon],[bounds.getNorth(),lon]], {color:"#57606a",weight:1,opacity:.34,dashArray:"3 5",interactive:false}).addTo(state.mapGrid);
-    const x = map.latLngToContainerPoint([map.getCenter().lat,lon]).x / size.x * 100;
-    const label=document.createElement("span"); label.textContent=`${lon.toFixed(lonStep < .1 ? 2 : 1)}°E`; label.style.left=`${x}%`; lonRoot.append(label);
+
+  const firstLon = Math.ceil((bounds.getWest() - 1e-10) / lonStep) * lonStep;
+  for (let lon = firstLon, guard = 0; lon <= bounds.getEast() + 1e-9 && guard < 40; lon += lonStep, guard += 1) {
+    L.polyline([[bounds.getSouth(), lon], [bounds.getNorth(), lon]], {
+      color: "#57606a", weight: 1, opacity: .30, dashArray: "3 5", interactive: false,
+    }).addTo(state.mapGrid);
+    const xPx = map.latLngToContainerPoint([map.getCenter().lat, lon]).x;
+    if (xPx >= 34 && xPx <= size.x - 34) {
+      const label = document.createElement("span");
+      label.textContent = formatLongitude(lon, lonStep);
+      label.style.left = `${xPx / size.x * 100}%`;
+      lonRoot.append(label);
+    }
   }
-  for (let lat = Math.ceil(bounds.getSouth()/latStep)*latStep; lat <= bounds.getNorth()+1e-9; lat += latStep) {
-    L.polyline([[lat,bounds.getWest()],[lat,bounds.getEast()]], {color:"#57606a",weight:1,opacity:.34,dashArray:"3 5",interactive:false}).addTo(state.mapGrid);
-    const y = map.latLngToContainerPoint([lat,map.getCenter().lng]).y / size.y * 100;
-    const label=document.createElement("span"); label.textContent=`${lat.toFixed(latStep < .1 ? 2 : 1)}°N`; label.style.top=`${y}%`; latRoot.append(label);
+
+  const firstLat = Math.ceil((bounds.getSouth() - 1e-10) / latStep) * latStep;
+  for (let lat = firstLat, guard = 0; lat <= bounds.getNorth() + 1e-9 && guard < 40; lat += latStep, guard += 1) {
+    if (lat < -90 || lat > 90) continue;
+    L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], {
+      color: "#57606a", weight: 1, opacity: .30, dashArray: "3 5", interactive: false,
+    }).addTo(state.mapGrid);
+    const yPx = map.latLngToContainerPoint([lat, map.getCenter().lng]).y;
+    if (yPx >= 18 && yPx <= size.y - 18) {
+      const label = document.createElement("span");
+      label.textContent = formatLatitude(lat, latStep);
+      label.style.top = `${yPx / size.y * 100}%`;
+      latRoot.append(label);
+    }
   }
-  const c=map.getCenter(); $("mapMeta").textContent=`Center ${c.lat.toFixed(3)}° N, ${c.lng.toFixed(3)}° E · Zoom ${map.getZoom()}`;
+
+  const c = map.getCenter();
+  $("mapMeta").textContent = `Center ${Math.abs(c.lat).toFixed(3)}° ${c.lat < 0 ? "S" : "N"}, ${Math.abs((((c.lng + 180) % 360 + 360) % 360) - 180).toFixed(3)}° ${((((c.lng + 180) % 360 + 360) % 360) - 180) < 0 ? "W" : "E"} · Zoom ${map.getZoom()}`;
 }
 
 function initMap() {
