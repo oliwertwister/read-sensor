@@ -173,6 +173,44 @@
     return parseArchiveEntries(entries);
   }
 
+  async function loadFiles(files) {
+    const list = [...(files || [])];
+    if (!list.length) return { datasets: [], featureCount: 0 };
+
+    for (const file of list) {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        throw new Error(`${file.name} is ${(file.size / 1048576).toFixed(1)} MiB; maximum is 3 MiB per file.`);
+      }
+    }
+
+    const shapeExts = new Set(["shp", "dbf", "shx", "prj", "cpg"]);
+    const shapeGroups = new Map();
+    const regular = [];
+    for (const file of list) {
+      const ext = extension(file.name);
+      if (!shapeExts.has(ext)) { regular.push(file); continue; }
+      const key = stem(file.name).toLowerCase();
+      if (!shapeGroups.has(key)) shapeGroups.set(key, []);
+      shapeGroups.get(key).push(file);
+    }
+
+    const datasets = [];
+    for (const filesForShape of shapeGroups.values()) {
+      const entries = {};
+      for (const file of filesForShape) entries[file.name] = new Uint8Array(await file.arrayBuffer());
+      const hasShp = filesForShape.some((file) => extension(file.name) === "shp");
+      if (!hasShp) throw new Error(`Shapefile selection is missing .shp for ${stem(filesForShape[0].name)}.`);
+      datasets.push(...await parseShapeParts(entries));
+    }
+
+    for (const file of regular) {
+      const result = await load(file);
+      datasets.push(...result.datasets);
+    }
+    const featureCount = enforceFeatureLimit(datasets);
+    return { datasets, featureCount };
+  }
+
   async function load(file) {
     if (!file) return { datasets: [], featureCount: 0 };
     if (file.size > MAX_UPLOAD_BYTES) {
@@ -198,6 +236,7 @@
 
   window.GeometryLoader = Object.freeze({
     load,
+    loadFiles,
     limits: Object.freeze({ uploadMiB: 3, expandedMiB: 20, features: MAX_FEATURES }),
   });
 })();

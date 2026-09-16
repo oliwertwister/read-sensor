@@ -56,7 +56,7 @@
   function clearGeometry() {
     group?.clearLayers();
     combinedBounds = null;
-    $("geometryStatus").textContent = "GeoJSON · GPKG · ZIP/RAR Shapefile · max 3 MiB";
+    $("geometryStatus").textContent = "GeoJSON · GPKG · SHP (+ DBF/PRJ) · ZIP/RAR · max 3 MiB";
     updateButtons();
   }
 
@@ -79,19 +79,23 @@
     if (!map || !group) throw new Error("Open Berlin Map before adding geometry.");
     const list = [...files];
     if (!list.length) return;
-    let layers = 0;
-    let features = 0;
-    for (let index = 0; index < list.length; index += 1) {
-      const file = list[index];
-      $("geometryStatus").textContent = `Reading ${file.name} locally (${index + 1}/${list.length})…`;
-      const result = await addFile(file);
-      layers += result.datasets.length;
-      features += result.featureCount;
+    const names = list.length === 1 ? list[0].name : `${list.length} files`;
+    $("geometryStatus").textContent = `Reading ${names} locally…`;
+    const result = window.GeometryLoader.loadFiles
+      ? await window.GeometryLoader.loadFiles(list)
+      : await window.GeometryLoader.load(list[0]);
+    for (const dataset of result.datasets) {
+      const layer = makeLayer(dataset);
+      layer.addTo(group);
+      const b = layer.getBounds?.();
+      if (b?.isValid()) {
+        combinedBounds = combinedBounds?.isValid() ? combinedBounds.extend(b) : L.latLngBounds(b);
+      }
     }
     updateButtons();
     fitGeometry();
-    const names = list.length === 1 ? list[0].name : `${list.length} files`;
-    $("geometryStatus").textContent = `${names} · ${layers} layer${layers === 1 ? "" : "s"} · ${features.toLocaleString()} features · local only`;
+    const layers = result.datasets.length;
+    $("geometryStatus").textContent = `${names} · ${layers} layer${layers === 1 ? "" : "s"} · ${result.featureCount.toLocaleString()} features · local only`;
   }
 
   function attachToMap(nextMap) {
