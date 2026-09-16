@@ -236,14 +236,18 @@ function initTabs() {
       button.classList.add("active");
       $(button.dataset.tab).classList.add("active");
       if (button.dataset.tab === "map" && state.map) {
-        setTimeout(() => state.map.invalidateSize({ pan: false }), 100);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          state.map.invalidateSize({ pan: false, animate: false });
+          state.map.setView([52.52, 13.405], 11, { animate: false });
+          addCoordinateGrid(state.map);
+        }));
       }
     });
   });
 }
 
 function initMap() {
-  state.map = L.map("leafletMap").setView([52.52, 13.405], 11);
+  state.map = L.map("leafletMap", { zoomControl: true }).setView([52.52, 13.405], 11);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "© OpenStreetMap contributors",
