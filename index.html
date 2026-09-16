@@ -8,8 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="leaflet.css?v=1.9.4-local">
-    <link rel="stylesheet" href="style.css?v=aviation-ui-2">
+    <link rel="stylesheet" href="style.css?v=leaflet-grid-1">
   </head>
   <body>
     <header>
@@ -80,8 +79,16 @@
       </section>
 
       <section id="map" class="tab">
-        <h2>Berlin Map</h2>
-        <div id="leafletMap"></div>
+        <div class="map-heading">
+          <div><h2>Berlin Map</h2><p class="muted">OpenStreetMap · Berlin and surroundings · WGS84 coordinate grid</p></div>
+          <div id="mapMeta" class="map-meta">Center — · Zoom —</div>
+        </div>
+        <div class="map-frame">
+          <div id="leafletMap"></div>
+          <div id="lonLabels" class="coord-axis coord-axis-x" aria-hidden="true"></div>
+          <div id="latLabels" class="coord-axis coord-axis-y" aria-hidden="true"></div>
+        </div>
+        <p class="muted map-foot">Coordinates: WGS84 (EPSG:4326) · Map data © OpenStreetMap contributors</p>
       </section>
 
       <section id="system" class="tab">
@@ -103,6 +110,6 @@
       crossorigin="anonymous"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=aviation-ui-2"></script>
+    <script src="app.js?v=leaflet-grid-1"></script>
   </body>
 </html>

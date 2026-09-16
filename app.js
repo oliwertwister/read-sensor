@@ -281,25 +281,67 @@ function initTabs() {
       );
       button.classList.add("active");
       $(button.dataset.tab).classList.add("active");
-      if (button.dataset.tab === "map" && state.map) {
-        setTimeout(() => state.map.invalidateSize(), 50);
+      if (button.dataset.tab === "map") {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!state.map) {
+            initMap();
+          } else {
+            state.map.invalidateSize({ pan: false, animate: false });
+            refreshMapDecorations();
+          }
+        }));
       }
     });
   });
 }
 
+function mapGridStep(span) {
+  if (span > 2) return 0.5;
+  if (span > 1) return 0.2;
+  if (span > 0.45) return 0.1;
+  if (span > 0.2) return 0.05;
+  return 0.02;
+}
+
+function refreshMapDecorations() {
+  if (!state.map) return;
+  const map = state.map;
+  const bounds = map.getBounds();
+  const size = map.getSize();
+  if (!size.x || !size.y) return;
+  const latStep = mapGridStep(bounds.getNorth() - bounds.getSouth());
+  const lonStep = mapGridStep(bounds.getEast() - bounds.getWest());
+  state.mapGrid.clearLayers();
+  const lonRoot = $("lonLabels"); const latRoot = $("latLabels");
+  lonRoot.replaceChildren(); latRoot.replaceChildren();
+  for (let lon = Math.ceil(bounds.getWest()/lonStep)*lonStep; lon <= bounds.getEast()+1e-9; lon += lonStep) {
+    L.polyline([[bounds.getSouth(),lon],[bounds.getNorth(),lon]], {color:"#57606a",weight:1,opacity:.34,dashArray:"3 5",interactive:false}).addTo(state.mapGrid);
+    const x = map.latLngToContainerPoint([map.getCenter().lat,lon]).x / size.x * 100;
+    const label=document.createElement("span"); label.textContent=`${lon.toFixed(lonStep < .1 ? 2 : 1)}°E`; label.style.left=`${x}%`; lonRoot.append(label);
+  }
+  for (let lat = Math.ceil(bounds.getSouth()/latStep)*latStep; lat <= bounds.getNorth()+1e-9; lat += latStep) {
+    L.polyline([[lat,bounds.getWest()],[lat,bounds.getEast()]], {color:"#57606a",weight:1,opacity:.34,dashArray:"3 5",interactive:false}).addTo(state.mapGrid);
+    const y = map.latLngToContainerPoint([lat,map.getCenter().lng]).y / size.y * 100;
+    const label=document.createElement("span"); label.textContent=`${lat.toFixed(latStep < .1 ? 2 : 1)}°N`; label.style.top=`${y}%`; latRoot.append(label);
+  }
+  const c=map.getCenter(); $("mapMeta").textContent=`Center ${c.lat.toFixed(3)}° N, ${c.lng.toFixed(3)}° E · Zoom ${map.getZoom()}`;
+}
+
 function initMap() {
-  state.map = L.map("leafletMap").setView([52.52, 13.405], 11);
+  state.map = L.map("leafletMap", { zoomControl: true, fadeAnimation: false }).setView([52.52, 13.405], 10);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "© OpenStreetMap contributors",
   }).addTo(state.map);
-  L.marker([52.52, 13.405]).addTo(state.map).bindPopup("Berlin");
+  state.mapGrid = L.layerGroup().addTo(state.map);
+  L.circleMarker([52.52, 13.405], {radius:7,weight:2,fillOpacity:.9}).addTo(state.map).bindPopup("Berlin");
+  L.circleMarker([52.3667,13.5033], {radius:6,weight:2,fillOpacity:.9}).addTo(state.map).bindPopup("BER · EDDB");
+  L.control.scale({imperial:false, position:"bottomleft"}).addTo(state.map);
+  state.map.on("moveend zoomend resize", refreshMapDecorations);
+  refreshMapDecorations();
 }
-
 async function init() {
   initTabs();
-  initMap();
   initIconCharts();
   const healthUrl = apiUrl("/health");
   $("apiLink").href = healthUrl;
