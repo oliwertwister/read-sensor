@@ -236,48 +236,19 @@ function initTabs() {
       button.classList.add("active");
       $(button.dataset.tab).classList.add("active");
       if (button.dataset.tab === "map" && state.map) {
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          state.map.invalidateSize({ pan: false, animate: false });
-          state.map.setView([52.52, 13.405], 11, { animate: false });
-          addCoordinateGrid(state.map);
-        }));
+        setTimeout(() => state.map.invalidateSize(), 50);
       }
     });
   });
 }
 
 function initMap() {
-  state.map = L.map("leafletMap", { zoomControl: true }).setView([52.52, 13.405], 11);
+  state.map = L.map("leafletMap").setView([52.52, 13.405], 11);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "© OpenStreetMap contributors",
   }).addTo(state.map);
   L.marker([52.52, 13.405]).addTo(state.map).bindPopup("Berlin");
-  L.control.scale({ imperial: false, position: "bottomleft" }).addTo(state.map);
-  addCoordinateGrid(state.map);
-  state.map.on("moveend zoomend", () => addCoordinateGrid(state.map));
-}
-
-function addCoordinateGrid(map) {
-  if (state.coordinateGrid) state.coordinateGrid.remove();
-  const group = L.layerGroup().addTo(map);
-  state.coordinateGrid = group;
-  const b = map.getBounds();
-  const step = map.getZoom() >= 12 ? 0.02 : map.getZoom() >= 10 ? 0.05 : 0.1;
-  const firstLat = Math.ceil(b.getSouth() / step) * step;
-  const firstLon = Math.ceil(b.getWest() / step) * step;
-  for (let lat = firstLat; lat <= b.getNorth(); lat += step) {
-    L.polyline([[lat,b.getWest()],[lat,b.getEast()]], {className:"coord-grid-line", interactive:false}).addTo(group);
-    L.marker([lat,b.getWest()], {icon: coordinateLabel(`${lat.toFixed(2)}° N`, "lat"), interactive:false}).addTo(group);
-  }
-  for (let lon = firstLon; lon <= b.getEast(); lon += step) {
-    L.polyline([[b.getSouth(),lon],[b.getNorth(),lon]], {className:"coord-grid-line", interactive:false}).addTo(group);
-    L.marker([b.getSouth(),lon], {icon: coordinateLabel(`${lon.toFixed(2)}° E`, "lon"), interactive:false}).addTo(group);
-  }
-}
-
-function coordinateLabel(text, axis) {
-  return L.divIcon({className:`coord-label coord-label-${axis}`, html:text, iconSize:null});
 }
 
 async function init() {
