@@ -85,7 +85,11 @@ article {
 small { display: block; margin-bottom: 10px; color: #8b949e; }
 strong { font-size: clamp(1.45rem, 4vw, 2rem); }
 
-#leafletMap { height: 520px; border-radius: 12px; overflow: hidden; }
+#leafletMap { width: 100%; height: min(68vh, 680px); min-height: 520px; border: 1px solid #30363d; border-radius: 12px; overflow: hidden; background: #161b22; }
+.coord-grid-line { stroke: #202830; stroke-width: 1; stroke-opacity: .55; }
+.coord-label { width: max-content !important; height: auto !important; padding: 2px 5px; border-radius: 4px; color: #111820; background: rgba(255,255,255,.82); font: 11px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; pointer-events: none; }
+.coord-label-lat { transform: translate(4px,-50%); }
+.coord-label-lon { transform: translate(-50%,-22px); }
 #chart { width: 100%; min-height: 360px; max-height: 460px; border-radius: 12px; background: #f6f8fa; }
 
 pre {
@@ -110,6 +114,6 @@ a { color: #58a6ff; }
   select { width: 100%; min-width: 0; }
   nav { padding: 12px 18px; }
   main { padding: 22px 18px; }
-  #leafletMap { height: 400px; }
+  #leafletMap { height: 58vh; min-height: 400px; }
   .system-details div { grid-template-columns: 1fr; gap: 2px; }
 }
