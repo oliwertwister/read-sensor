@@ -229,6 +229,21 @@ async function devices(request, env) {
   return json(request, env, { devices: results });
 }
 
+async function aviationWeather(request, env) {
+  const headers = { "User-Agent": "read-sensor/1.0 weather-dashboard" };
+  const base = "https://aviationweather.gov/api/data";
+  const [metarResponse, tafResponse] = await Promise.all([
+    fetch(`${base}/metar?ids=EDDB&format=json&hours=3`, { headers }),
+    fetch(`${base}/taf?ids=EDDB&format=json`, { headers }),
+  ]);
+  if (!metarResponse.ok || !tafResponse.ok) {
+    return json(request, env, { error: "aviation_weather_upstream" }, 502);
+  }
+  const metars = await metarResponse.json();
+  const tafs = await tafResponse.json();
+  return json(request, env, { station: "EDDB", airport: "Berlin Brandenburg Airport (BER)", metar: metars[0] || null, taf: tafs[0] || null });
+}
+
 export default {
   async fetch(request, env) {
     try {
@@ -257,6 +272,9 @@ export default {
       }
       if (url.pathname === "/api/v1/devices" && request.method === "GET") {
         return await devices(request, env);
+      }
+      if (url.pathname === "/api/v1/weather/aviation" && request.method === "GET") {
+        return await aviationWeather(request, env);
       }
 
       return json(request, env, { error: "not_found" }, 404);

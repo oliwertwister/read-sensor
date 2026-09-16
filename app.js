@@ -227,6 +227,30 @@ async function loadWeather() {
   }
 }
 
+function utcTime(epoch) { return epoch ? new Date(epoch * 1000).toLocaleString(undefined, { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" }) + " UTC" : "—"; }
+function knots(value) { return value == null ? "—" : `${value} kt`; }
+function degrees(value) { return value == null ? "Variable" : `${value}°`; }
+function cloudText(clouds) { return !clouds?.length ? "Clear / none reported" : clouds.map(c => c.base ? `${c.cover} ${c.base} ft` + (c.type ? ` ${c.type}` : "") : c.cover).join(", "); }
+function tafPeriod(period) {
+  const div = document.createElement("div"); div.className = "taf-period";
+  const change = period.fcstChange || "BASE"; const prob = period.probability ? ` ${period.probability}%` : "";
+  div.innerHTML = `<span class="wx-badge">${change}${prob}</span><strong>${utcTime(period.timeFrom)} → ${utcTime(period.timeTo)}</strong><br><span class="muted">Wind ${degrees(period.wdir)} ${knots(period.wspd)}${period.wgst ? ` gust ${period.wgst} kt` : ""} · visibility ${period.visib || "—"} mi · ${period.wxString || "NSW"} · ${cloudText(period.clouds)}</span>`;
+  return div;
+}
+async function loadAviationWeather() {
+  const root = $("aviationDetail");
+  try {
+    const data = await fetchJson("/api/v1/weather/aviation"); const m = data.metar; const t = data.taf;
+    if (!m || !t) throw new Error("Missing EDDB report");
+    const cards = document.createElement("div"); cards.className = "aviation-grid";
+    [["Temperature", `${m.temp} °C`], ["Dew point", `${m.dewp} °C`], ["Wind", `${degrees(m.wdir)} · ${knots(m.wspd)}`], ["Visibility", `${m.visib} mi`], ["QNH", `${Math.round(m.altim)} hPa`], ["Flight category", m.fltCat || "—"]].forEach(([a,b]) => cards.append(weatherCard(a,b)));
+    const metar = document.createElement("div"); metar.className="wx-panel"; metar.innerHTML=`<h3>METAR · current observation</h3><p class="wx-raw">${m.rawOb}</p><p><strong>Decoded:</strong> ${m.name}; observed ${utcTime(m.obsTime)}. Wind ${degrees(m.wdir)} at ${knots(m.wspd)}, visibility ${m.visib} statute miles, ${cloudText(m.clouds)}, temperature ${m.temp} °C, dew point ${m.dewp} °C, QNH ${Math.round(m.altim)} hPa. ${m.fltCat ? `Flight category ${m.fltCat}.` : ""}</p>`;
+    const taf = document.createElement("div"); taf.className="wx-panel"; taf.innerHTML=`<h3>TAF · airport forecast</h3><p class="wx-raw">${t.rawTAF}</p><p class="muted">Issued ${utcTime(t.issueTime)} · valid ${utcTime(t.validTimeFrom)} → ${utcTime(t.validTimeTo)}</p>`; (t.fcsts||[]).forEach(x=>taf.append(tafPeriod(x)));
+    const source=document.createElement("p"); source.className="muted"; source.textContent="Source: Aviation Weather Center Data API. No API key or login is required; the Cloudflare Worker fetches and relays EDDB METAR/TAF so browser CORS restrictions do not expose or block the source.";
+    root.replaceChildren(cards, metar, taf, source);
+  } catch(e) { console.error("aviation_weather_failed",e); root.textContent="BER aviation weather unavailable."; }
+}
+
 function initTabs() {
   document.querySelectorAll("nav button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -264,7 +288,7 @@ async function init() {
     await loadHistory();
   });
 
-  await Promise.all([loadWeather(), loadDevices()]);
+  await Promise.all([loadWeather(), loadAviationWeather(), loadDevices()]);
   await loadHistory();
   setInterval(updateAge, 30000);
   setInterval(pollLatest, 60000);

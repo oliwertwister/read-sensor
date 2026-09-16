@@ -113,3 +113,13 @@ a { color: #58a6ff; }
   #leafletMap { height: 400px; }
   .system-details div { grid-template-columns: 1fr; gap: 2px; }
 }
+
+.aviation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 18px 0; }
+.aviation-grid article { padding: 16px; }
+.aviation-grid strong { font-size: 1.2rem; }
+.wx-panel { margin: 18px 0; padding: 20px; border: 1px solid #30363d; border-radius: 12px; background: #161b22; }
+.wx-panel h3 { margin-top: 0; }
+.wx-raw { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.55; overflow-wrap: anywhere; }
+.taf-period { border-top: 1px solid #30363d; padding: 12px 0; }
+.taf-period:first-of-type { border-top: 0; }
+.wx-badge { display: inline-block; margin-right: 8px; padding: 3px 8px; border: 1px solid #30363d; border-radius: 999px; font-size: .8rem; }

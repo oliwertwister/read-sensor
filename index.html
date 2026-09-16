@@ -9,7 +9,7 @@
     >
     <title>read-sensor</title>
     <link rel="stylesheet" href="leaflet.css?v=1.9.4-local">
-    <link rel="stylesheet" href="style.css?v=map-rollback-1">
+    <link rel="stylesheet" href="style.css?v=aviation-1">
   </head>
   <body>
     <header>
@@ -28,6 +28,7 @@
       <button type="button" data-tab="overview" class="active">Overview</button>
       <button type="button" data-tab="cpu">CPU Temperature</button>
       <button type="button" data-tab="weather">Berlin Weather</button>
+      <button type="button" data-tab="aviation">BER Aviation Weather</button>
       <button type="button" data-tab="map">Berlin Map</button>
       <button type="button" data-tab="system">Sensor / System</button>
     </nav>
@@ -62,6 +63,12 @@
         <div id="weatherDetail">Loading weather…</div>
       </section>
 
+      <section id="aviation" class="tab">
+        <h2>BER Aviation Weather</h2>
+        <p class="muted">Official aviation reports for Berlin Brandenburg Airport · EDDB</p>
+        <div id="aviationDetail">Loading METAR and TAF…</div>
+      </section>
+
       <section id="map" class="tab">
         <h2>Berlin Map</h2>
         <div id="leafletMap"></div>
@@ -86,6 +93,6 @@
       crossorigin="anonymous"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=map-rollback-1"></script>
+    <script src="app.js?v=aviation-1"></script>
   </body>
 </html>
