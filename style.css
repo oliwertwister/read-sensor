@@ -135,3 +135,26 @@ a { color: #58a6ff; }
 .model-figure img { display: block; width: 100%; max-height: 920px; object-fit: contain; background: #fff; border-radius: 6px; }
 .model-figure figcaption { margin-top: 10px; }
 @media (max-width: 680px) { .model-heading { align-items: stretch; flex-direction: column; } .model-controls { display: grid; grid-template-columns: 1fr 1fr; } .model-controls select { width: 100%; min-width: 0; } }
+/* Compact aviation-weather presentation */
+.aviation-summary { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(320px,.85fr); gap:16px; margin:18px 0; }
+.aviation-summary .wx-panel { margin:0; }
+.panel-title { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.panel-title h3 { margin:0; }
+.flight-badge { padding:4px 12px; border-radius:999px; background:#238636; color:#fff; font-weight:700; font-size:.82rem; }
+.metric-strip { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin:18px 0; }
+.metric-strip > div { display:flex; flex-direction:column; gap:5px; padding:2px 14px; border-left:1px solid #30363d; }
+.metric-strip > div:first-child { border-left:0; padding-left:0; }
+.metric-strip small,.metric-strip span { color:#8b949e; }
+.metric-strip strong { font-size:1.15rem; }
+.raw-strip { margin:16px 0 0; padding:12px 14px; border:1px solid #30363d; border-radius:8px; background:#0d1117; font-size:.88rem; }
+.wx-details { display:grid; grid-template-columns:max-content 1fr; margin:0; font-size:.9rem; }
+.wx-details dt,.wx-details dd { margin:0; padding:7px 0; border-bottom:1px solid #30363d; }
+.wx-details dt { padding-right:18px; color:#8b949e; }
+.taf-panel { margin-top:16px; }
+.taf-head,.taf-row { display:grid; grid-template-columns:90px minmax(240px,1.4fr) minmax(130px,.8fr) 100px 100px minmax(150px,1fr); align-items:center; gap:12px; padding:10px 0; }
+.taf-head { color:#8b949e; font-size:.76rem; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #30363d; }
+.taf-row { border-bottom:1px solid #30363d; font-size:.9rem; }
+.taf-time { font-weight:600; }
+.wx-badge { width:max-content; margin:0; }
+.wx-source { margin:12px 2px 24px; font-size:.82rem; }
+@media(max-width:900px){.aviation-summary{grid-template-columns:1fr}.metric-strip{grid-template-columns:repeat(2,1fr);gap:14px}.metric-strip>div{border-left:0;padding:0}.taf-panel{overflow-x:auto}.taf-head,.taf-row{min-width:900px}}

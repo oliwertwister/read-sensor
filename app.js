@@ -232,22 +232,25 @@ function knots(value) { return value == null ? "—" : `${value} kt`; }
 function degrees(value) { return value == null ? "Variable" : `${value}°`; }
 function cloudText(clouds) { return !clouds?.length ? "Clear / none reported" : clouds.map(c => c.base ? `${c.cover} ${c.base} ft` + (c.type ? ` ${c.type}` : "") : c.cover).join(", "); }
 function tafPeriod(period) {
-  const div = document.createElement("div"); div.className = "taf-period";
+  const row = document.createElement("div"); row.className = "taf-row";
   const change = period.fcstChange || "BASE"; const prob = period.probability ? ` ${period.probability}%` : "";
-  div.innerHTML = `<span class="wx-badge">${change}${prob}</span><strong>${utcTime(period.timeFrom)} → ${utcTime(period.timeTo)}</strong><br><span class="muted">Wind ${degrees(period.wdir)} ${knots(period.wspd)}${period.wgst ? ` gust ${period.wgst} kt` : ""} · visibility ${period.visib || "—"} mi · ${period.wxString || "NSW"} · ${cloudText(period.clouds)}</span>`;
-  return div;
+  const wind = `${degrees(period.wdir)} ${knots(period.wspd)}${period.wgst ? ` G${period.wgst} kt` : ""}`;
+  row.innerHTML = `<span class="wx-badge wx-${change.toLowerCase()}">${change}${prob}</span><span class="taf-time">${utcTime(period.timeFrom).replace(" UTC","")} → ${utcTime(period.timeTo).replace(" UTC","")}</span><span>${wind}</span><span>${period.visib ? `${period.visib} mi` : "—"}</span><span>${period.wxString || "NSW"}</span><span>${cloudText(period.clouds)}</span>`;
+  return row;
 }
 async function loadAviationWeather() {
   const root = $("aviationDetail");
   try {
     const data = await fetchJson("/api/v1/weather/aviation"); const m = data.metar; const t = data.taf;
     if (!m || !t) throw new Error("Missing EDDB report");
-    const cards = document.createElement("div"); cards.className = "aviation-grid";
-    [["Temperature", `${m.temp} °C`], ["Dew point", `${m.dewp} °C`], ["Wind", `${degrees(m.wdir)} · ${knots(m.wspd)}`], ["Visibility", `${m.visib} mi`], ["QNH", `${Math.round(m.altim)} hPa`], ["Flight category", m.fltCat || "—"]].forEach(([a,b]) => cards.append(weatherCard(a,b)));
-    const metar = document.createElement("div"); metar.className="wx-panel"; metar.innerHTML=`<h3>METAR · current observation</h3><p class="wx-raw">${m.rawOb}</p><p><strong>Decoded:</strong> ${m.name}; observed ${utcTime(m.obsTime)}. Wind ${degrees(m.wdir)} at ${knots(m.wspd)}, visibility ${m.visib} statute miles, ${cloudText(m.clouds)}, temperature ${m.temp} °C, dew point ${m.dewp} °C, QNH ${Math.round(m.altim)} hPa. ${m.fltCat ? `Flight category ${m.fltCat}.` : ""}</p>`;
-    const taf = document.createElement("div"); taf.className="wx-panel"; taf.innerHTML=`<h3>TAF · airport forecast</h3><p class="wx-raw">${t.rawTAF}</p><p class="muted">Issued ${utcTime(t.issueTime)} · valid ${utcTime(t.validTimeFrom)} → ${utcTime(t.validTimeTo)}</p>`; (t.fcsts||[]).forEach(x=>taf.append(tafPeriod(x)));
-    const source=document.createElement("p"); source.className="muted"; source.textContent="Source: Aviation Weather Center Data API. No API key or login is required; the Cloudflare Worker fetches and relays EDDB METAR/TAF so browser CORS restrictions do not expose or block the source.";
-    root.replaceChildren(cards, metar, taf, source);
+    const summary = document.createElement("div"); summary.className = "aviation-summary";
+    summary.innerHTML = `<div class="wx-panel"><div class="panel-title"><h3>Current conditions (METAR)</h3><span class="flight-badge">${m.fltCat || "—"}</span></div><p class="muted">Observed ${utcTime(m.obsTime)}</p><div class="metric-strip"><div><small>Temperature</small><strong>${m.temp} °C</strong><span>Dew point ${m.dewp} °C</span></div><div><small>Wind</small><strong>${degrees(m.wdir)} · ${knots(m.wspd)}</strong><span>${m.wgst ? `Gust ${m.wgst} kt` : "No gust reported"}</span></div><div><small>Visibility</small><strong>${m.visib} mi</strong><span>${m.visib >= 6 ? "CAVOK / good" : "Reported"}</span></div><div><small>Cloud</small><strong>${cloudText(m.clouds)}</strong></div><div><small>QNH</small><strong>${Math.round(m.altim)} hPa</strong></div></div><p class="wx-raw raw-strip">${m.rawOb}</p></div>`;
+    const decoded = document.createElement("div"); decoded.className="wx-panel decoded-panel";
+    decoded.innerHTML=`<h3>METAR decoded</h3><dl class="wx-details"><dt>Station</dt><dd>${m.name} (EDDB)</dd><dt>Observed</dt><dd>${utcTime(m.obsTime)}</dd><dt>Wind</dt><dd>${degrees(m.wdir)} at ${knots(m.wspd)}</dd><dt>Visibility</dt><dd>${m.visib} statute miles</dd><dt>Clouds</dt><dd>${cloudText(m.clouds)}</dd><dt>Temperature / dew point</dt><dd>${m.temp} °C / ${m.dewp} °C</dd><dt>QNH</dt><dd>${Math.round(m.altim)} hPa</dd><dt>Flight category</dt><dd>${m.fltCat || "—"}</dd></dl>`;
+    summary.append(decoded);
+    const taf = document.createElement("div"); taf.className="wx-panel taf-panel"; taf.innerHTML=`<h3>Forecast (TAF)</h3><p class="muted">Issued ${utcTime(t.issueTime)} · valid ${utcTime(t.validTimeFrom)} → ${utcTime(t.validTimeTo)}</p><div class="taf-head"><span>Change</span><span>Period (UTC)</span><span>Wind</span><span>Visibility</span><span>Weather</span><span>Cloud</span></div>`; (t.fcsts||[]).forEach(x=>taf.append(tafPeriod(x))); const raw=document.createElement("p"); raw.className="wx-raw raw-strip"; raw.textContent=t.rawTAF; taf.append(raw);
+    const source=document.createElement("p"); source.className="muted wx-source"; source.textContent="Source: Aviation Weather Center Data API · EDDB · times in UTC.";
+    root.replaceChildren(summary, taf, source);
   } catch(e) { console.error("aviation_weather_failed",e); root.textContent="BER aviation weather unavailable."; }
 }
 
