@@ -50,7 +50,7 @@ jobs:
 
       - name: Render latest Meteosat products
         run: |
-          python -m pip install --disable-pip-version-check --quiet pillow
+          python -m pip install --disable-pip-version-check --quiet pillow geopandas geodatasets
           python satellite/render_satellite.py --output satellite/output
 
       - name: Stage public files

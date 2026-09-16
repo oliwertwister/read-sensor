@@ -13,6 +13,9 @@ from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw, ImageFont
+import geopandas as gpd
+import geodatasets
+
 
 WMS = "https://view.eumetsat.int/geoserver/wms"
 BBOX = (-25.0, 30.0, 45.0, 72.0)  # west, south, east, north
@@ -87,6 +90,18 @@ def label(draw: ImageDraw.ImageDraw, xy, text: str, anchor: str = "mm") -> None:
     draw.text(xy, text, font=fnt, fill=(245, 248, 252, 245), anchor=anchor)
 
 
+def draw_boundaries(draw, x_of, y_of) -> None:
+    # Natural Earth country polygons supplied by geodatasets. Draw only polygon
+    # exteriors; clipping to the image is handled naturally by Pillow.
+    world = gpd.read_file(geodatasets.get_path("naturalearth.land")).to_crs(4326)
+    for geom in world.geometry:
+        polygons = geom.geoms if geom.geom_type == "MultiPolygon" else [geom]
+        for polygon in polygons:
+            points = [(x_of(lon), y_of(lat)) for lon, lat in polygon.exterior.coords]
+            if len(points) > 1:
+                draw.line(points, fill=(255, 255, 255, 205), width=2, joint="curve")
+
+
 def decorate(image: Image.Image, title: str, observed_at: str) -> Image.Image:
     canvas = image.convert("RGBA")
     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
@@ -95,6 +110,8 @@ def decorate(image: Image.Image, title: str, observed_at: str) -> Image.Image:
     width, height = canvas.size
     x_of = lambda lon: (lon - west) / (east - west) * width
     y_of = lambda lat: (north - lat) / (north - south) * height
+
+    draw_boundaries(draw, x_of, y_of)
 
     for lon in range(-20, 41, 10):
         x = x_of(lon)
