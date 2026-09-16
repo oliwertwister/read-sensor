@@ -104,6 +104,19 @@ def decorate(image: Image.Image, title: str, observed_at: str) -> Image.Image:
         y = y_of(lat)
         draw.line((0, y, width, y), fill=(230, 238, 246, 95), width=1)
         label(draw, (42, y), f"{lat}°N")
+
+    # Berlin marker: geographic position in the same WGS84/CRS:84 extent as the grid.
+    berlin_lon, berlin_lat = 13.4050, 52.5200
+    bx, by = x_of(berlin_lon), y_of(berlin_lat)
+    marker_font = font(34)
+    marker = "🦝"
+    try:
+        draw.text((bx, by - 8), marker, font=marker_font, anchor="ms",
+                  embedded_color=True)
+    except (TypeError, ValueError):
+        draw.text((bx, by - 8), marker, font=marker_font, fill="white", anchor="ms")
+    draw.ellipse((bx - 4, by - 4, bx + 4, by + 4), fill=(255, 255, 255, 245))
+    label(draw, (bx, by + 17), "Berlin", anchor="ma")
     footer_h = 74
     draw.rectangle((0, height - footer_h, width, height), fill=(5, 10, 16, 205))
     draw.text((22, height - 47), f"MTG-I · FCI · {title}", font=font(24, True), fill="white")
