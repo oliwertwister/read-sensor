@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
+      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=leaflet-grid-1">
+    <link rel="stylesheet" href="style.css?v=geometry-2">
   </head>
   <body>
     <header>
@@ -52,9 +52,12 @@
       </section>
 
       <section id="cpu" class="tab">
-        <h2>CPU Temperature</h2>
+        <div class="cpu-heading">
+          <div><h2>CPU Temperature</h2><p id="cpuRange" class="muted">Waiting for telemetry…</p></div>
+          <div class="cpu-timezone">Europe/Berlin · local time</div>
+        </div>
         <canvas id="chart" width="900" height="360"></canvas>
-        <p class="muted">Up to 24 hours at the five-minute collection interval.</p>
+        <p class="muted">Up to 24 hours at the five-minute collection interval. Hover the chart for the full timestamp.</p>
       </section>
 
       <section id="weather" class="tab">
@@ -83,6 +86,13 @@
           <div><h2>Berlin Map</h2><p class="muted">OpenStreetMap · Berlin and surroundings · WGS84 coordinate grid</p></div>
           <div id="mapMeta" class="map-meta">Center — · Zoom —</div>
         </div>
+        <div class="geometry-toolbar">
+          <input id="geometryFile" type="file" accept=".geojson,.json,.gpkg,.zip,.rar" multiple hidden>
+          <button id="geometryAdd" type="button">Add geometry</button>
+          <button id="geometryFit" type="button" disabled>Fit to layer</button>
+          <button id="geometryClear" type="button" disabled>Clear</button>
+          <span id="geometryStatus" class="muted">Local only · GeoJSON · GPKG · ZIP/RAR Shapefile · max 3 MiB</span>
+        </div>
         <div class="map-frame">
           <div id="leafletMap"></div>
           <div id="lonLabels" class="coord-axis coord-axis-x" aria-hidden="true"></div>
@@ -110,6 +120,8 @@
       crossorigin="anonymous"
     ></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="app.js?v=leaflet-grid-1"></script>
+    <script src="geometry-loader.js?v=geometry-2"></script>
+    <script src="geometry-ui.js?v=geometry-2"></script>
+    <script src="app.js?v=geometry-2"></script>
   </body>
 </html>

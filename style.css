@@ -839,3 +839,30 @@ a { color: #58a6ff; }
 .coord-axis-y span { left:4px; transform:translateY(-50%); }
 .map-foot { margin:10px 2px 0; font-size:.82rem; }
 @media(max-width:680px){.map-heading{align-items:stretch;flex-direction:column}.map-meta{white-space:normal}#leafletMap{height:55vh;min-height:390px}.coord-axis-y{width:48px}.coord-axis{font-size:10px}}
+
+/* Local geometry upload */
+.geometry-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 12px; }
+.geometry-toolbar button { padding:8px 12px; }
+.geometry-toolbar button:disabled { opacity:.45; cursor:not-allowed; }
+.geometry-toolbar #geometryStatus { margin-left:4px; font-size:.82rem; }
+.geometry-popup { max-width:380px; overflow:auto; }
+.geometry-popup table { border-collapse:collapse; width:100%; font-size:.8rem; }
+.geometry-popup th,.geometry-popup td { padding:4px 7px; border-bottom:1px solid #d0d7de; text-align:left; vertical-align:top; }
+.geometry-popup th { font-weight:600; white-space:nowrap; }
+
+@media(max-width:680px) {
+  .geometry-toolbar { display:grid; grid-template-columns:1fr 1fr 1fr; }
+  .geometry-toolbar button { width:100%; }
+  .geometry-toolbar #geometryStatus { grid-column:1 / -1; margin:2px 0 0; }
+}
+
+/* CPU chart timestamp context */
+.cpu-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:14px; }
+.cpu-heading h2 { margin-bottom:5px; }
+.cpu-heading p { margin:0; }
+.cpu-timezone { padding:7px 10px; border:1px solid #30363d; border-radius:8px; color:#8b949e; font-size:.82rem; white-space:nowrap; }
+
+/* Local geometry import */
+.map-frame.geometry-drop-active { outline:3px solid #2ea043; outline-offset:3px; }
+.map-frame.geometry-drop-active::after { content:"Drop geometry files here"; position:absolute; inset:14px; z-index:1001; display:grid; place-items:center; border:2px dashed #2ea043; border-radius:10px; background:rgba(13,17,23,.78); color:#f0f6fc; font-weight:700; pointer-events:none; }
+@media(max-width:680px){ .cpu-heading{align-items:flex-start;flex-direction:column}.cpu-timezone{white-space:normal} }

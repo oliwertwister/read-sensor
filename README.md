@@ -1,23 +1,24 @@
 # read-sensor
 
-A zero-cost prototype for publishing device telemetry to a static GitHub Pages dashboard.
+A zero-cost prototype for publishing outbound-only device telemetry to a static GitHub Pages dashboard.
 
-## Dashboard tabs
+## Dashboard
 
-1. **Overview** — current CPU temperature, last sensor update, status, and Berlin weather summary.
-2. **CPU Temperature** — time-series chart of CPU temperature with automatic browser refresh.
-3. **Berlin Weather** — temperature and weather data for Berlin from a free public weather API.
-4. **Berlin Map** — Leaflet map using OpenStreetMap tiles.
-5. **Sensor / System** — raw latest sensor record, collector status, and explanation of the local-to-web data path.
+- **Overview** — current CPU temperature, sensor age, and Berlin weather.
+- **CPU Temperature** — D1-backed temperature history with automatic refresh.
+- **Berlin Weather** — general Berlin weather from Open-Meteo.
+- **BER Aviation Weather** — EDDB METAR/TAF plus DWD ICON forecast charts.
+- **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid, Berlin and BER markers, and local geometry loading.
+- **Sensor / System** — latest telemetry record and architecture details.
 
-## Data path
+## Telemetry path
 
-A scheduled job runs the local collector periodically. The collector reads CPU temperature, writes/recreates a small local sensor file, and publishes a compact telemetry record for the website. The website never gets direct filesystem access to the sensor node: the local collector is the bridge between the local file and the public dashboard.
+The sensor computer makes one-shot outbound HTTPS requests to a Cloudflare Worker. The Worker authenticates the device and stores bounded history in Cloudflare D1. GitHub Pages reads the public API; there is no inbound listener, tunnel, or public service on the sensor computer.
 
-The implementation is deliberately bounded so telemetry history cannot grow indefinitely or approach GitHub storage limits.
+`install-schedule.sh` installs a macOS LaunchAgent that runs the collector every five minutes. Runtime files live under `~/.local/lib/read-sensor` so the job does not depend on background access to an iCloud-backed Documents folder.
 
-## Scheduling
+## Local geometry
 
-`install-schedule.sh` installs a five-minute crontab entry. Each run recreates `sensor-latest.json`, appends one bounded history sample, and pushes the two telemetry files. GitHub Pages then serves the updated data and the open browser refreshes it every minute.
+The Berlin Map can display GeoJSON/JSON, GeoPackage (`.gpkg`), and Shapefiles packaged as `.zip` or `.rar`. Geometry is parsed entirely in the browser and is never uploaded. Safety limits are 3 MiB per selected file, 20 MiB after archive extraction, and 20,000 features.
 
-This is suitable for a low-frequency, free prototype. It is intentionally not a high-frequency telemetry database.
+Vendored parser notices are in `vendor/THIRD_PARTY_NOTICES.md`.

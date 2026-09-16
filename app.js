@@ -8,6 +8,7 @@ const state = {
   readings: [],
   chart: null,
   map: null,
+  mapGrid: null,
 };
 
 function apiUrl(path, parameters = {}) {
@@ -62,6 +63,45 @@ function updateAge() {
   );
 }
 
+
+const CPU_TIME_ZONE = "Europe/Berlin";
+
+function formatCpuTick(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+  const datePart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short",
+  }).format(date);
+  const timePart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(date);
+  return [datePart, timePart];
+}
+
+function formatCpuTimestamp(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: CPU_TIME_ZONE, weekday: "short", day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZoneName: "short",
+  }).format(date);
+}
+
+function updateCpuRange() {
+  const el = $("cpuRange");
+  if (!el) return;
+  if (!state.readings.length) { el.textContent = "No samples available."; return; }
+  const first = readingTime(state.readings[0]);
+  const last = readingTime(state.readings[state.readings.length - 1]);
+  const dayFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" });
+  const timeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false });
+  const zoneFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, timeZoneName: "short" });
+  const zone = zoneFmt.formatToParts(last).find((p) => p.type === "timeZoneName")?.value || CPU_TIME_ZONE;
+  const sameDay = dayFmt.format(first) === dayFmt.format(last);
+  const range = sameDay
+    ? `${dayFmt.format(first)} · ${timeFmt.format(first)}–${timeFmt.format(last)} ${zone}`
+    : `${dayFmt.format(first)} ${timeFmt.format(first)} → ${dayFmt.format(last)} ${timeFmt.format(last)} ${zone}`;
+  el.textContent = `${range} · ${state.readings.length.toLocaleString()} samples`;
+}
+
 function renderReadings() {
   const latest = latestReading();
   if (!latest) {
@@ -75,10 +115,9 @@ function renderReadings() {
     updateAge();
   }
 
-  const labels = state.readings.map((reading) =>
-    readingTime(reading).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-  );
+  const labels = state.readings.map((reading) => reading.recorded_at);
   const values = state.readings.map((reading) => reading.value);
+  updateCpuRange();
   if (state.chart) {
     state.chart.data.labels = labels;
     state.chart.data.datasets[0].data = values;
@@ -107,8 +146,27 @@ function renderReadings() {
       responsive: true,
       maintainAspectRatio: false,
       interaction: { intersect: false, mode: "index" },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            title(items) {
+              if (!items.length) return "";
+              return formatCpuTimestamp(new Date(items[0].label));
+            },
+          },
+        },
+      },
       scales: {
-        x: { ticks: { maxTicksLimit: 10 } },
+        x: {
+          ticks: {
+            maxTicksLimit: 8,
+            maxRotation: 0,
+            callback(value) {
+              const raw = this.getLabelForValue(value);
+              return formatCpuTick(new Date(raw));
+            },
+          },
+        },
         y: { title: { display: true, text: "°C" } },
       },
     },
@@ -334,6 +392,7 @@ function initMap() {
     attribution: "© OpenStreetMap contributors",
   }).addTo(state.map);
   state.mapGrid = L.layerGroup().addTo(state.map);
+  window.GeometryUI?.attachToMap(state.map);
   L.circleMarker([52.52, 13.405], {radius:7,weight:2,fillOpacity:.9}).addTo(state.map).bindPopup("Berlin");
   L.circleMarker([52.3667,13.5033], {radius:6,weight:2,fillOpacity:.9}).addTo(state.map).bindPopup("BER · EDDB");
   L.control.scale({imperial:false, position:"bottomleft"}).addTo(state.map);
@@ -343,6 +402,7 @@ function initMap() {
 async function init() {
   initTabs();
   initIconCharts();
+  window.GeometryUI?.init();
   const healthUrl = apiUrl("/health");
   $("apiLink").href = healthUrl;
   $("apiLink").textContent = healthUrl.origin;
