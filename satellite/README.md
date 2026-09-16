@@ -10,8 +10,12 @@ Current products come from EUMETSAT EUMETView WMS and are based on MTG-I FCI:
 - `mtg_fd:ir105_hrfi` — 10.5 µm thermal infrared imagery.
 
 The renderer crops Europe to 25°W–45°E / 30°N–72°N, overlays a WGS84
-latitude/longitude grid, embeds the observation timestamp and exports WebP.
+latitude/longitude grid plus Natural Earth 1:50m Admin-0 country boundaries
+fitted to the same CRS:84 extent and exports WebP. This is country-level
+administrative geometry, not merely a coastline layer. Observation time is
+carried separately in `latest.json` and displayed by the dashboard.
 No Mac, phone, browser session, API key, or inbound connection is required.
+Country geometry is fetched by the scheduled renderer from Natural Earth.
 
 ## Raw FCI / Satpy upgrade
 

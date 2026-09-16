@@ -13,8 +13,9 @@ from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw, ImageFont
-import geopandas as gpd
-import geodatasets
+
+# Natural Earth 1:50m Admin-0 country polygons (public-domain map geometry).
+COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson"
 
 
 WMS = "https://view.eumetsat.int/geoserver/wms"
@@ -32,6 +33,8 @@ PRODUCTS = {
         "subtitle": "thermal infrared cloud-top view",
     },
 }
+
+
 def fetch_bytes(url: str) -> bytes:
     req = Request(url, headers={"User-Agent": "read-sensor-satellite/1.0"})
     with urlopen(req, timeout=90) as response:
@@ -68,6 +71,8 @@ def wms_image(layer: str, observed_at: str) -> Image.Image:
         "format": "image/png", "transparent": "false", "time": observed_at,
     }
     return Image.open(BytesIO(fetch_bytes(f"{WMS}?{urlencode(params)}"))).convert("RGB")
+
+
 def font(size: int, bold: bool = False):
     names = ["DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"]
     for name in names:
@@ -90,28 +95,46 @@ def label(draw: ImageDraw.ImageDraw, xy, text: str, anchor: str = "mm") -> None:
     draw.text(xy, text, font=fnt, fill=(245, 248, 252, 245), anchor=anchor)
 
 
-def draw_boundaries(draw, x_of, y_of) -> None:
-    # Natural Earth country polygons supplied by geodatasets. Draw only polygon
-    # exteriors; clipping to the image is handled naturally by Pillow.
-    world = gpd.read_file(geodatasets.get_path("naturalearth.land")).to_crs(4326)
-    for geom in world.geometry:
-        polygons = geom.geoms if geom.geom_type == "MultiPolygon" else [geom]
+def draw_boundaries(draw, x_of, y_of, countries: dict) -> None:
+    # Admin-0 country polygons include shared international borders; a generic
+    # land polygon would only trace coastlines/landmass outlines.
+    for feature in countries.get("features", []):
+        geom = feature.get("geometry") or {}
+        coords = geom.get("coordinates") or []
+        if geom.get("type") == "Polygon":
+            polygons = [coords]
+        elif geom.get("type") == "MultiPolygon":
+            polygons = coords
+        else:
+            polygons = []
         for polygon in polygons:
-            points = [(x_of(lon), y_of(lat)) for lon, lat in polygon.exterior.coords]
+            if not polygon:
+                continue
+            points = []
+            for coordinate in polygon[0]:
+                if len(coordinate) >= 2:
+                    lon, lat = coordinate[:2]
+                    points.append((x_of(lon), y_of(lat)))
             if len(points) > 1:
-                draw.line(points, fill=(255, 255, 255, 205), width=2, joint="curve")
+                draw.line(points, fill=(255, 255, 255, 220), width=2, joint="curve")
 
 
-def decorate(image: Image.Image, title: str, observed_at: str) -> Image.Image:
+def decorate(image: Image.Image, countries: dict) -> Image.Image:
     canvas = image.convert("RGBA")
     overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     west, south, east, north = BBOX
     width, height = canvas.size
-    x_of = lambda lon: (lon - west) / (east - west) * width
-    y_of = lambda lat: (north - lat) / (north - south) * height
 
-    draw_boundaries(draw, x_of, y_of)
+    def x_of(lon):
+        return (lon - west) / (east - west) * width
+
+    def y_of(lat):
+        return (north - lat) / (north - south) * height
+
+    # Administrative geometry is projected with the exact same lon/lat-to-pixel
+    # transform as the coordinate grid, so the two overlays stay registered.
+    draw_boundaries(draw, x_of, y_of, countries)
 
     for lon in range(-20, 41, 10):
         x = x_of(lon)
@@ -122,29 +145,18 @@ def decorate(image: Image.Image, title: str, observed_at: str) -> Image.Image:
         draw.line((0, y, width, y), fill=(230, 238, 246, 95), width=1)
         label(draw, (42, y), f"{lat}°N")
 
-    # Berlin marker: geographic position in the same WGS84/CRS:84 extent as the grid.
+    # Berlin raccoon marker uses the same WGS84/CRS:84 extent as the grid.
     berlin_lon, berlin_lat = 13.4050, 52.5200
     bx, by = x_of(berlin_lon), y_of(berlin_lat)
-    marker_font = font(34)
-    marker = "🦝"
-    try:
-        draw.text((bx, by - 8), marker, font=marker_font, anchor="ms",
-                  embedded_color=True)
-    except (TypeError, ValueError):
-        draw.text((bx, by - 8), marker, font=marker_font, fill="white", anchor="ms")
-    draw.ellipse((bx - 4, by - 4, bx + 4, by + 4), fill=(255, 255, 255, 245))
-    label(draw, (bx, by + 17), "Berlin", anchor="ma")
-    footer_h = 74
-    draw.rectangle((0, height - footer_h, width, height), fill=(5, 10, 16, 205))
-    draw.text((22, height - 47), f"MTG-I · FCI · {title}", font=font(24, True), fill="white")
-    draw.text(
-        (width - 22, height - 47), observed_at.replace("T", " ").replace("Z", " UTC"),
-        font=font(19), fill=(220, 228, 238), anchor="ra",
-    )
-    draw.text(
-        (22, height - 18), "© EUMETSAT / EUMETView · grid overlay: read-sensor",
-        font=font(16), fill=(174, 184, 197), anchor="ls",
-    )
+    draw.polygon([(bx - 13, by - 13), (bx - 20, by - 24), (bx - 5, by - 18)], fill=(145, 154, 166, 255))
+    draw.polygon([(bx + 13, by - 13), (bx + 20, by - 24), (bx + 5, by - 18)], fill=(145, 154, 166, 255))
+    draw.ellipse((bx - 16, by - 20, bx + 16, by + 12), fill=(235, 238, 242, 245), outline=(8, 13, 19, 245), width=2)
+    draw.ellipse((bx - 13, by - 11, bx - 2, by - 1), fill=(45, 52, 61, 255))
+    draw.ellipse((bx + 2, by - 11, bx + 13, by - 1), fill=(45, 52, 61, 255))
+    draw.ellipse((bx - 8, by - 8, bx - 4, by - 4), fill="white")
+    draw.ellipse((bx + 4, by - 8, bx + 8, by - 4), fill="white")
+    draw.ellipse((bx - 3, by, bx + 3, by + 5), fill=(20, 24, 29, 255))
+    label(draw, (bx, by + 27), "Berlin", anchor="ma")
     return Image.alpha_composite(canvas, overlay).convert("RGB")
 
 
@@ -156,6 +168,9 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
 
     times = latest_times()
+    countries = json.loads(fetch_bytes(COUNTRIES_URL).decode("utf-8"))
+    if not countries.get("features"):
+        raise RuntimeError("Natural Earth Admin-0 geometry is empty")
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     metadata = {
         "generated_at": generated_at,
@@ -164,13 +179,14 @@ def main() -> None:
         "instrument": "FCI",
         "bbox": BBOX,
         "nominal_cadence_minutes": 10,
+        "boundary_overlay": "Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent",
         "products": {},
     }
     for key, cfg in PRODUCTS.items():
         observed_at = times.get(key)
         if not observed_at:
             raise RuntimeError(f"No current time advertised for {cfg['layer']}")
-        image = decorate(wms_image(cfg["layer"], observed_at), cfg["title"], observed_at)
+        image = decorate(wms_image(cfg["layer"], observed_at), countries)
         filename = f"{key}.webp"
         image.save(output / filename, "WEBP", quality=88, method=6)
         metadata["products"][key] = {

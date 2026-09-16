@@ -356,6 +356,7 @@ function renderSatellite() {
   $("satelliteCaption").textContent = product.subtitle;
   $("satObserved").textContent = satelliteTime(product.observed_at);
   $("satCadence").textContent = `~${satelliteMeta.nominal_cadence_minutes || 10} min`;
+  $("satProcessing").textContent = satelliteMeta.boundary_overlay || "Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent";
   const ageMin = Math.max(0, Math.round((Date.now() - new Date(product.observed_at).getTime()) / 60000));
   $("satelliteFreshness").textContent = `Latest · ${ageMin} min old`;
 }

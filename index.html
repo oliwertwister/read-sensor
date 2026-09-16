@@ -104,12 +104,12 @@
         </figure>
         <section class="satellite-about" aria-label="About this satellite image">
           <h3>About this image</h3>
-          <p>This is a Meteosat Third Generation FCI product supplied by EUMETSAT EUMETView. The latitude/longitude grid is added by read-sensor during rendering from the requested WGS84 map extent; it is not inferred from the image pixels.</p>
+          <p>This is a Meteosat Third Generation FCI product supplied by EUMETSAT EUMETView. The coordinate grid and Natural Earth Admin-0 country boundaries are fitted to the same requested WGS84 / CRS:84 extent as the satellite image; they are not inferred from image pixels.</p>
           <div class="satellite-about-grid">
             <div><small>Source</small><strong>EUMETSAT EUMETView</strong></div>
             <div><small>Projection</small><strong>WGS84 / CRS:84</strong></div>
             <div><small>Coverage</small><strong>25°W–45°E · 30°N–72°N</strong></div>
-            <div><small>Processing</small><strong>Cloud · image + grid overlay</strong></div>
+            <div><small>Processing</small><strong id="satProcessing">Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent</strong></div>
           </div>
         </section>
       </section>
@@ -156,6 +156,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=satellite-2"></script>
+    <script src="app.js?v=satellite-7"></script>
   </body>
 </html>
