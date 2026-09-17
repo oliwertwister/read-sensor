@@ -65,6 +65,9 @@ function updateAge() {
 
 
 const CPU_TIME_ZONE = "Europe/Berlin";
+const CPU_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CPU_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
+const CPU_GAP_THRESHOLD_MS = 7.5 * 60 * 1000;
 
 function formatCpuTick(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
@@ -85,22 +88,116 @@ function formatCpuTimestamp(date) {
   }).format(date);
 }
 
-function updateCpuRange() {
+function formatDuration(milliseconds) {
+  const minutes = Math.max(0, Math.round(milliseconds / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours} h ${remainder} min` : `${hours} h`;
+}
+
+function cpuWindow(now = Date.now()) {
+  const start = now - CPU_WINDOW_MS;
+  const all = state.readings
+    .map((reading) => ({ reading, time: readingTime(reading)?.getTime() }))
+    .filter(({ time }) => Number.isFinite(time) && time <= now)
+    .sort((a, b) => a.time - b.time);
+  const visible = all.filter(({ time }) => time >= start);
+  const previous = all.filter(({ time }) => time < start).at(-1);
+  const gaps = [];
+
+  if (!visible.length) {
+    gaps.push({ from: start, to: now, open: true });
+  } else {
+    const first = visible[0];
+    const firstAnchor = previous ? previous.time : start;
+    if (first.time - firstAnchor > CPU_GAP_THRESHOLD_MS) {
+      const gapStart = previous ? previous.time + CPU_SAMPLE_INTERVAL_MS : start;
+      gaps.push({ from: Math.max(start, gapStart), to: first.time, open: false });
+    }
+
+    for (let index = 1; index < visible.length; index += 1) {
+      const before = visible[index - 1];
+      const after = visible[index];
+      if (after.time - before.time > CPU_GAP_THRESHOLD_MS) {
+        gaps.push({
+          from: before.time + CPU_SAMPLE_INTERVAL_MS,
+          to: after.time,
+          open: false,
+        });
+      }
+    }
+
+    const last = visible.at(-1);
+    if (now - last.time > CPU_GAP_THRESHOLD_MS) {
+      gaps.push({
+        from: last.time + CPU_SAMPLE_INTERVAL_MS,
+        to: now,
+        open: true,
+      });
+    }
+  }
+
+  const points = [];
+  visible.forEach(({ reading, time }, index) => {
+    const before = visible[index - 1];
+    if (before && time - before.time > CPU_GAP_THRESHOLD_MS) {
+      points.push({ x: before.time + ((time - before.time) / 2), y: null });
+    }
+    points.push({ x: time, y: Number(reading.value) });
+  });
+
+  return { start, end: now, visible, points, gaps };
+}
+
+function updateCpuRange(timeline) {
   const el = $("cpuRange");
   if (!el) return;
-  if (!state.readings.length) { el.textContent = "No samples available."; return; }
-  const first = readingTime(state.readings[0]);
-  const last = readingTime(state.readings[state.readings.length - 1]);
   const dayFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" });
-  const timeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false });
-  const zoneFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, timeZoneName: "short" });
-  const zone = zoneFmt.formatToParts(last).find((p) => p.type === "timeZoneName")?.value || CPU_TIME_ZONE;
+  const timeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
+  const first = new Date(timeline.start);
+  const last = new Date(timeline.end);
   const sameDay = dayFmt.format(first) === dayFmt.format(last);
   const range = sameDay
-    ? `${dayFmt.format(first)} · ${timeFmt.format(first)}–${timeFmt.format(last)} ${zone}`
-    : `${dayFmt.format(first)} ${timeFmt.format(first)} → ${dayFmt.format(last)} ${timeFmt.format(last)} ${zone}`;
-  el.textContent = `${range} · ${state.readings.length.toLocaleString()} samples`;
+    ? `${dayFmt.format(first)} · ${timeFmt.format(first)}–${timeFmt.format(last)}`
+    : `${dayFmt.format(first)} ${timeFmt.format(first)} → ${dayFmt.format(last)} ${timeFmt.format(last)}`;
+  const gapTotal = timeline.gaps.reduce((total, gap) => total + gap.to - gap.from, 0);
+  const gapSummary = timeline.gaps.length
+    ? `${timeline.gaps.length} no-data ${timeline.gaps.length === 1 ? "period" : "periods"} · ${formatDuration(gapTotal)} total`
+    : "No downtime detected";
+  el.textContent = `${range} · ${timeline.visible.length.toLocaleString()} samples · ${gapSummary}`;
 }
+
+const cpuDowntimePlugin = {
+  id: "cpuDowntime",
+  beforeDatasetsDraw(chart, _args, options) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x || !options?.gaps?.length) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(248, 81, 73, 0.14)";
+    for (const gap of options.gaps) {
+      const left = Math.max(chartArea.left, scales.x.getPixelForValue(gap.from));
+      const right = Math.min(chartArea.right, scales.x.getPixelForValue(gap.to));
+      if (right > left) ctx.fillRect(left, chartArea.top, right - left, chartArea.bottom - chartArea.top);
+    }
+    ctx.restore();
+  },
+  afterDatasetsDraw(chart, _args, options) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea || !scales.x || !options?.gaps?.length) return;
+    ctx.save();
+    ctx.fillStyle = "#ff7b72";
+    ctx.font = "600 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (const gap of options.gaps) {
+      const left = Math.max(chartArea.left, scales.x.getPixelForValue(gap.from));
+      const right = Math.min(chartArea.right, scales.x.getPixelForValue(gap.to));
+      if (right - left >= 56) ctx.fillText(gap.open ? "No data · now" : "No data", (left + right) / 2, chartArea.top + 8);
+    }
+    ctx.restore();
+  },
+};
 
 function renderReadings() {
   const latest = latestReading();
@@ -115,12 +212,13 @@ function renderReadings() {
     updateAge();
   }
 
-  const labels = state.readings.map((reading) => reading.recorded_at);
-  const values = state.readings.map((reading) => reading.value);
-  updateCpuRange();
+  const timeline = cpuWindow();
+  updateCpuRange(timeline);
   if (state.chart) {
-    state.chart.data.labels = labels;
-    state.chart.data.datasets[0].data = values;
+    state.chart.data.datasets[0].data = timeline.points;
+    state.chart.options.scales.x.min = timeline.start;
+    state.chart.options.scales.x.max = timeline.end;
+    state.chart.options.plugins.cpuDowntime.gaps = timeline.gaps;
     state.chart.update("none");
     return;
   }
@@ -128,42 +226,47 @@ function renderReadings() {
   state.chart = new Chart($("chart"), {
     type: "line",
     data: {
-      labels,
       datasets: [
         {
           label: "CPU °C",
-          data: values,
+          data: timeline.points,
           borderColor: "#58a6ff",
           backgroundColor: "rgba(88, 166, 255, 0.14)",
           fill: true,
+          parsing: false,
+          spanGaps: false,
           tension: 0.25,
           pointRadius: 1.5,
         },
       ],
     },
+    plugins: [cpuDowntimePlugin],
     options: {
       animation: false,
       responsive: true,
       maintainAspectRatio: false,
       interaction: { intersect: false, mode: "index" },
       plugins: {
+        cpuDowntime: { gaps: timeline.gaps },
         tooltip: {
           callbacks: {
             title(items) {
               if (!items.length) return "";
-              return formatCpuTimestamp(new Date(items[0].label));
+              return formatCpuTimestamp(new Date(items[0].parsed.x));
             },
           },
         },
       },
       scales: {
         x: {
+          type: "linear",
+          min: timeline.start,
+          max: timeline.end,
           ticks: {
             maxTicksLimit: 8,
             maxRotation: 0,
             callback(value) {
-              const raw = this.getLabelForValue(value);
-              return formatCpuTick(new Date(raw));
+              return formatCpuTick(new Date(value));
             },
           },
         },
@@ -207,7 +310,7 @@ async function pollLatest() {
       state.readings = state.readings.slice(-config.historyLimit);
       renderReadings();
     } else {
-      updateAge();
+      renderReadings();
     }
   } catch (error) {
     console.error("latest_failed", error);

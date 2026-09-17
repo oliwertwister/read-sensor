@@ -58,7 +58,7 @@
           <div class="cpu-timezone">Europe/Berlin · local time</div>
         </div>
         <canvas id="chart" width="900" height="360"></canvas>
-        <p class="muted">Up to 24 hours at the five-minute collection interval. Hover the chart for the full timestamp.</p>
+        <p class="muted">Rolling 24-hour timeline. Red “No data” bands show missed collection periods; hover a reading for its full timestamp.</p>
       </section>
 
       <section id="weather" class="tab">
@@ -148,7 +148,7 @@
       </section>
     </main>
 
-    <script src="config.js?v=c72fb63"></script>
+    <script src="config.js?v=chart-gaps-1"></script>
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
@@ -157,6 +157,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=satellite-8"></script>
+    <script src="app.js?v=chart-gaps-1"></script>
   </body>
 </html>
