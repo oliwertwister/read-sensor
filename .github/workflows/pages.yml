@@ -5,7 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: "*/15 * * * *"
+    # Avoid the busiest start-of-hour and quarter-hour scheduler windows.
+    - cron: "7,22,37,52 * * * *"
 
 permissions:
   contents: read

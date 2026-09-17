@@ -1,8 +1,11 @@
 # Satellite pipeline
 
 The dashboard satellite tab is generated independently of the sensor computer.
-GitHub Actions runs `render_satellite.py` every 15 minutes and deploys the result
-with the static GitHub Pages site.
+GitHub Actions schedules `render_satellite.py` four times per hour, away from
+common quarter-hour congestion, and deploys the result with the static GitHub
+Pages site. Scheduled Actions are best-effort, so the dashboard displays both
+the source observation time and the page-generation time and marks old imagery
+as stale.
 
 Current products come from EUMETSAT EUMETView WMS and are based on MTG-I FCI:
 

@@ -8,7 +8,7 @@ A zero-cost prototype for publishing outbound-only device telemetry to a static 
 - **CPU Temperature** — D1-backed temperature history with automatic refresh.
 - **Berlin Weather** — general Berlin weather from Open-Meteo.
 - **BER Aviation Weather** — EDDB METAR/TAF plus DWD ICON forecast charts.
-- **Satellite** — autonomous MTG-I/FCI Europe imagery with WGS84 grid, refreshed by GitHub Actions every 15 minutes.
+- **Satellite** — autonomous MTG-I/FCI Europe imagery with WGS84 grid, scheduled four times per hour by GitHub Actions.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid, Berlin and BER markers, and local geometry loading.
 - **Sensor / System** — latest telemetry record and architecture details.
 

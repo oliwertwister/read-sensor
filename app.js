@@ -337,10 +337,34 @@ let satelliteProduct = "geocolour";
 
 function satelliteTime(value) {
   if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat("en-GB", {
     timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(new Date(value)) + " UTC";
+  }).format(date) + " UTC";
+}
+
+function updateSatelliteFreshness() {
+  const freshness = $("satelliteFreshness");
+  const product = satelliteMeta?.products?.[satelliteProduct];
+  const observedAt = new Date(product?.observed_at || "");
+  if (Number.isNaN(observedAt.getTime())) {
+    freshness.textContent = "Data age unavailable";
+    freshness.className = "satellite-freshness unavailable";
+    freshness.removeAttribute("title");
+    return;
+  }
+
+  const ageMin = Math.max(0, Math.floor((Date.now() - observedAt.getTime()) / 60000));
+  const cadenceMin = Number(satelliteMeta.nominal_cadence_minutes) || 10;
+  const staleAfterMin = Math.max(35, cadenceMin * 3);
+  const stale = ageMin > staleAfterMin;
+  freshness.textContent = `Data age · ${ageMin} min${stale ? " · stale" : ""}`;
+  freshness.className = `satellite-freshness${stale ? " stale" : ""}`;
+  freshness.title = stale
+    ? `Observation is older than the ${staleAfterMin}-minute freshness threshold.`
+    : "Age of the selected satellite observation.";
 }
 
 function renderSatellite() {
@@ -355,10 +379,10 @@ function renderSatellite() {
   $("satelliteTitle").textContent = `${satelliteMeta.platform} · ${satelliteMeta.instrument} · ${product.title}`;
   $("satelliteCaption").textContent = product.subtitle;
   $("satObserved").textContent = satelliteTime(product.observed_at);
+  $("satGenerated").textContent = satelliteTime(satelliteMeta.generated_at);
   $("satCadence").textContent = `~${satelliteMeta.nominal_cadence_minutes || 10} min`;
   $("satProcessing").textContent = satelliteMeta.boundary_overlay || "Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent";
-  const ageMin = Math.max(0, Math.round((Date.now() - new Date(product.observed_at).getTime()) / 60000));
-  $("satelliteFreshness").textContent = `Latest · ${ageMin} min old`;
+  updateSatelliteFreshness();
 }
 
 async function loadSatellite() {
@@ -370,6 +394,7 @@ async function loadSatellite() {
   } catch (error) {
     console.error("satellite_failed", error);
     $("satelliteFreshness").textContent = "Satellite render unavailable";
+    $("satelliteFreshness").className = "satellite-freshness unavailable";
   }
 }
 
@@ -513,6 +538,7 @@ async function init() {
   await Promise.all([loadWeather(), loadAviationWeather(), loadDevices()]);
   await loadHistory();
   setInterval(updateAge, 30000);
+  setInterval(updateSatelliteFreshness, 30000);
   setInterval(pollLatest, 60000);
   setInterval(loadWeather, 300000);
   setInterval(loadDevices, 300000);
