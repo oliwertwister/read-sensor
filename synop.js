@@ -8,6 +8,8 @@
   const STATION_SOURCE_URL = "https://oscar.wmo.int/surface/";
   const MIN_MAP_ZOOM = 4;
   let feed = null;
+  let liveFeed = null;
+  let liveByWmo = new Map();
   const state = {
     wmo: DEFAULT_WMO, selected: null, map: null, markers: null, reportWmo: null,
     searchTimer: null, requestSequence: 0,
@@ -207,13 +209,26 @@
   }
 
   function sourceCredit() {
-    return `<p class="muted wx-source">Station catalog: <a href="${STATION_SOURCE_URL}" target="_blank" rel="noreferrer">WMO OSCAR/Surface</a> · raw reports via <a href="${RAW_SOURCE_URL}" target="_blank" rel="noreferrer">OGIMET getsynop</a> · <a href="${RAW_LICENSE_URL}" target="_blank" rel="noreferrer">source and usage notes</a> · WMO FM-12 SYNOP · UTC.</p>`;
+    return `<p class="muted wx-source">Station catalog: <a href="${STATION_SOURCE_URL}" target="_blank" rel="noreferrer">WMO OSCAR/Surface</a> · live map: DWD SYNOP feeds · raw reports via <a href="${RAW_SOURCE_URL}" target="_blank" rel="noreferrer">OGIMET getsynop</a> · <a href="${RAW_LICENSE_URL}" target="_blank" rel="noreferrer">source and usage notes</a> · WMO FM-12 SYNOP · UTC.</p>`;
   }
 
   function renderStation(record) {
     const root = $("synopDetail");
     if (!record?.raw) {
-      root.innerHTML = `<div class="wx-panel"><h3>No recent raw SYNOP</h3><p class="muted">${esc(record?.error || `No recent AAXX report returned for WMO ${record?.wmo || "—"}.`)}</p></div>${sourceCredit()}`;
+      if (record?.observation_time && record?.temperature_c != null) {
+        const freshness = observationAge(record.observation_time);
+        root.innerHTML = `
+          <div class="wx-panel">
+            <div class="panel-title">
+              <div><h3>Latest observation</h3><p class="muted">${esc(record.name)} · WMO ${esc(record.wmo)} · ${esc(utc(record.observation_time))}</p></div>
+              <span class="synop-freshness ${freshness.className}">${esc(freshness.label)}</span>
+            </div>
+            <div class="metric-strip synop-metrics">${metric("Temperature", Number(record.temperature_c).toFixed(1) + " °C")}</div>
+            <p class="muted">A current SYNOP observation is available, but the raw AAXX telegram was not returned by the raw-report source.</p>
+          </div>${sourceCredit()}`;
+        return;
+      }
+      root.innerHTML = `<div class="wx-panel"><h3>No recent SYNOP</h3><p class="muted">${esc(record?.error || `No recent observation returned for WMO ${record?.wmo || "—"}.`)}</p></div>${sourceCredit()}`;
       return;
     }
     let d;
@@ -322,7 +337,9 @@
       main.textContent = stationLabel(station);
       const sub = document.createElement("span");
       const elevation = Number.isFinite(Number(station.elev_m)) ? `${Math.round(Number(station.elev_m))} m` : "elevation —";
-      sub.textContent = [station.territory || station.region, `${station.lat.toFixed(3)}°, ${station.lon.toFixed(3)}°`, elevation].filter(Boolean).join(" · ");
+      const live = liveByWmo.get(station.wmo);
+      const liveText = live?.temperature_c != null ? `live · t=${Number(live.temperature_c).toFixed(1)} °C` : live ? "live" : "no recent report";
+      sub.textContent = [station.territory || station.region, liveText, `${station.lat.toFixed(3)}°, ${station.lon.toFixed(3)}°`, elevation].filter(Boolean).join(" · ");
       button.append(main, sub);
       button.addEventListener("click", () => selectStation(station));
       root.append(button);
@@ -339,7 +356,10 @@
       return;
     }
     const matches = feed.stations
-      .map((station) => ({ station, score: stationScore(station, q) }))
+      .map((station) => {
+        const baseScore = stationScore(station, q);
+        return { station, score: baseScore > 0 ? baseScore + (liveByWmo.has(station.wmo) ? 8 : 0) : 0 };
+      })
       .filter(({ score }) => score > 0)
       .sort((a, b) => b.score - a.score || a.station.name.localeCompare(b.station.name))
       .slice(0, 24)
@@ -363,12 +383,20 @@
       if (sequence !== state.requestSequence) return;
       $("synopSearchStatus").textContent = "";
       state.reportWmo = station.wmo;
-      renderStation({ ...station, ...report });
+      const live = liveByWmo.get(station.wmo);
+      renderStation({
+        ...station,
+        ...live,
+        ...report,
+        observation_time: report.observation_time || live?.observation_time || null,
+        temperature_c: live?.temperature_c ?? null,
+      });
     } catch (error) {
       if (sequence !== state.requestSequence) return;
       console.error("synop_report_failed", error);
       $("synopSearchStatus").textContent = "!";
-      renderStation({ ...station, raw: null, error: "Raw SYNOP retrieval unavailable." });
+      const live = liveByWmo.get(station.wmo);
+      renderStation({ ...station, ...live, raw: live?.raw || null, error: "Raw SYNOP retrieval unavailable." });
     }
   }
 
@@ -381,7 +409,16 @@
     if (focusMap && state.map) {
       state.map.setView([station.lat, station.lon], Math.max(state.map.getZoom(), 8));
     }
-    loadStationReport(station);
+    const live = liveByWmo.get(station.wmo);
+    if (live?.raw) {
+      state.reportWmo = station.wmo;
+      renderStation({ ...station, ...live });
+    } else if (live) {
+      renderStation({ ...station, ...live });
+      loadStationReport(station);
+    } else {
+      loadStationReport(station);
+    }
   }
 
   function markerSpacingForZoom(zoom) {
@@ -396,11 +433,13 @@
   }
 
   function stationsForCurrentMap() {
-    if (!state.map || !feed?.stations) return { visible: [], shown: [] };
+    if (!state.map || !liveFeed?.stations) return { visible: [], shown: [] };
     const zoom = state.map.getZoom();
     if (zoom < MIN_MAP_ZOOM) return { visible: [], shown: [] };
     const bounds = state.map.getBounds();
-    const visible = feed.stations.filter((station) => bounds.contains([station.lat, station.lon]));
+    const visible = liveFeed.stations.filter((station) =>
+      station.temperature_c != null && bounds.contains([station.lat, station.lon])
+    );
     const spacing = markerSpacingForZoom(zoom);
     if (!spacing) return { visible, shown: visible };
 
@@ -422,7 +461,7 @@
   }
 
   function renderMapStations() {
-    if (!state.map || !state.markers || !feed?.stations) return;
+    if (!state.map || !state.markers || !liveFeed?.stations) return;
     state.markers.clearLayers();
     const zoom = state.map.getZoom();
     if (zoom < MIN_MAP_ZOOM) {
@@ -436,7 +475,11 @@
       const marker = L.circleMarker([station.lat, station.lon], {
         radius, weight: 1.4, fillOpacity: 0.72,
       });
-      marker.bindTooltip(`${stationLabel(station)}${station.territory ? ` · ${station.territory}` : ""}`, { direction: "top" });
+      const temperature = station.temperature_c == null ? "t=—" : `t=${Number(station.temperature_c).toFixed(1)} °C`;
+      marker.bindTooltip(
+        `<strong>${esc(stationLabel(station))}</strong>${station.territory ? ` · ${esc(station.territory)}` : ""}<br><span>${esc(temperature)}</span>`,
+        { direction: "top", className: "synop-temperature-tooltip" },
+      );
       marker.on("click", () => selectStation(station, { focusMap: false }));
       marker.addTo(state.markers);
     }
@@ -462,13 +505,21 @@
     const root = $("synopDetail");
     if (!root) return;
     try {
-      const response = await fetch(`synop/latest.json?t=${Date.now()}`, { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      feed = await response.json();
+      const stamp = Date.now();
+      const [catalogResponse, liveResponse] = await Promise.all([
+        fetch(`synop/latest.json?t=${stamp}`, { cache: "no-store" }),
+        fetch(`synop/live.json?t=${stamp}`, { cache: "no-store" }),
+      ]);
+      if (!catalogResponse.ok) throw new Error(`catalog HTTP ${catalogResponse.status}`);
+      if (!liveResponse.ok) throw new Error(`live HTTP ${liveResponse.status}`);
+      feed = await catalogResponse.json();
+      liveFeed = await liveResponse.json();
+      liveByWmo = new Map((liveFeed.stations || []).map((station) => [station.wmo, station]));
       const stations = Array.isArray(feed.stations) ? feed.stations : [];
-      $("synopGenerated").textContent = feed.generated_at
-        ? `${stations.length.toLocaleString()} stations · ${feed.territory_count || "—"} territories · catalog snapshot ${utc(feed.generated_at)}`
-        : `${stations.length.toLocaleString()} stations`;
+      const liveStations = Array.isArray(liveFeed.stations) ? liveFeed.stations : [];
+      $("synopGenerated").textContent = liveFeed.generated_at
+        ? `${liveStations.length.toLocaleString()} recent reports · ${liveFeed.temperature_count?.toLocaleString?.() || "—"} temperatures · updated ${utc(liveFeed.generated_at)}`
+        : `${liveStations.length.toLocaleString()} recent reports`;
       renderMapStations();
 
       let selected = stations.find((station) => station.wmo === state.wmo);

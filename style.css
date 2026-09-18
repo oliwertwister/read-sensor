@@ -1141,3 +1141,16 @@ a { color: #58a6ff; }
   #synopMap { height:310px; }
   .synop-map-overlay { left:12px; right:auto; max-width:calc(100% - 24px); }
 }
+
+.synop-temperature-tooltip {
+  border:1px solid #3d444d;
+  border-radius:8px;
+  background:rgba(13,17,23,.94);
+  color:#e6edf3;
+  box-shadow:0 8px 24px rgba(0,0,0,.28);
+  font-size:.8rem;
+  line-height:1.35;
+}
+.synop-temperature-tooltip strong { color:#f0f6fc; font-weight:650; }
+.synop-temperature-tooltip span { color:#79c0ff; font-variant-numeric:tabular-nums; }
+.synop-temperature-tooltip::before { border-top-color:#3d444d; }

@@ -54,9 +54,13 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Check SYNOP catalog tooling
-        if: github.event_name == 'push' || inputs.satellite_only != true
-        run: python synop/test_update_synop.py
+      - name: Build live SYNOP map layer
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.satellite_only }}" != "true" ]; then
+            python synop/test_update_synop.py
+            python synop/test_update_live.py
+          fi
+          python synop/update_live.py --catalog synop/stations.json --output synop/output/live.json
 
       - name: Render latest Meteosat products
         run: |
@@ -72,6 +76,7 @@ jobs:
           cp -R satellite/output/. _site/satellite/
           mkdir -p _site/synop
           cp synop/stations.json _site/synop/latest.json
+          cp synop/output/live.json _site/synop/live.json
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
