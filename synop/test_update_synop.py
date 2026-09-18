@@ -1,23 +1,53 @@
 import unittest
 
-from update_synop import parse_station_list
+from update_synop import parse_oscar_stations, wmo_index
 
 
-STATIONS = """#ID;wigosIdentifier;Kennung;Stationsname;Geraetetyp;Messnetz;von_Datum;Geog_Breite;Geog_Laenge;Stationshoehe
-433;0-20000-0-10384;10384;Berlin-Tempelhof;MODES H;15;01.04.1918;52.467551;13.401981;47.74
-427;0-20000-0-10385;10385;Berlin Brandenburg;AMDA II;15;01.05.1938;52.380535;13.530429;45.64
-"""
+PAYLOAD = {
+    "stationSearchResults": [
+        {
+            "name": "BERLIN-TEMPELHOF",
+            "territory": "Germany",
+            "region": "Europe",
+            "declaredStatus": "Operational",
+            "latitude": 52.467551,
+            "longitude": 13.401981,
+            "elevation": 47.74,
+            "wigosStationIdentifiers": [{"wigosStationIdentifier": "0-20000-0-10384", "primary": True}],
+        },
+        {
+            "name": "CLOSED",
+            "territory": "Germany",
+            "region": "Europe",
+            "declaredStatus": "Closed",
+            "latitude": 52.0,
+            "longitude": 13.0,
+            "wigosStationIdentifiers": [{"wigosStationIdentifier": "0-20000-0-99999", "primary": True}],
+        },
+        {
+            "name": "NON-WMO",
+            "territory": "Germany",
+            "region": "Europe",
+            "declaredStatus": "Operational",
+            "latitude": 52.0,
+            "longitude": 13.0,
+            "wigosStationIdentifiers": [{"wigosStationIdentifier": "0-203-1-VP1885", "primary": True}],
+        },
+    ]
+}
 
 
-class SynopStationListTest(unittest.TestCase):
-    def test_station_catalog(self):
-        stations = parse_station_list(STATIONS)
-        self.assertEqual({station["wmo"] for station in stations}, {"10384", "10385"})
-        tempelhof = next(station for station in stations if station["wmo"] == "10384")
-        self.assertEqual(tempelhof["name"], "Berlin-Tempelhof")
-        self.assertAlmostEqual(tempelhof["lat"], 52.467551)
-        self.assertAlmostEqual(tempelhof["lon"], 13.401981)
-        self.assertAlmostEqual(tempelhof["elev_m"], 47.74)
+class OscarCatalogTest(unittest.TestCase):
+    def test_extracts_traditional_wmo_index(self):
+        self.assertEqual(wmo_index(PAYLOAD["stationSearchResults"][0]), "10384")
+        self.assertIsNone(wmo_index(PAYLOAD["stationSearchResults"][2]))
+
+    def test_keeps_operational_wmo_stations_only(self):
+        stations = parse_oscar_stations(PAYLOAD)
+        self.assertEqual(len(stations), 1)
+        self.assertEqual(stations[0]["wmo"], "10384")
+        self.assertEqual(stations[0]["territory"], "Germany")
+        self.assertAlmostEqual(stations[0]["lat"], 52.467551)
 
 
 if __name__ == "__main__":

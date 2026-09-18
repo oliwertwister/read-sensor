@@ -54,10 +54,9 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Fetch latest SYNOP reports
-        run: |
-          python synop/test_update_synop.py
-          python synop/update_synop.py --output synop/output/latest.json
+      - name: Check SYNOP catalog tooling
+        if: github.event_name == 'push' || inputs.satellite_only != true
+        run: python synop/test_update_synop.py
 
       - name: Render latest Meteosat products
         run: |
@@ -72,7 +71,7 @@ jobs:
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/
           mkdir -p _site/synop
-          cp -R synop/output/. _site/synop/
+          cp synop/stations.json _site/synop/latest.json
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

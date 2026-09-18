@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { decode } = require("../synop.js");
+const { decode, markerSpacingForZoom } = require("../synop.js");
 
 const decoded = decode(
   "AAXX 18161 10384 45984 83005 10190 20092 30081 40138 53009 333 60007 88/58==",
@@ -20,4 +20,12 @@ assert.equal(decoded.cloudCover, "8/8 oktas");
 assert.equal(decoded.precipitation, "0 mm / 3 h");
 assert.equal(decoded.cloudTypes, null, "Section 3 cloud groups must not be decoded as Section 1 cloud types");
 
-console.log("SYNOP decoder test passed");
+assert.equal(markerSpacingForZoom(2), Infinity, "world view must not render station markers");
+assert.equal(markerSpacingForZoom(3), Infinity, "continent view must remain uncluttered");
+assert.equal(markerSpacingForZoom(4), 105);
+assert.equal(markerSpacingForZoom(5), 82);
+assert.equal(markerSpacingForZoom(7), 46);
+assert.equal(markerSpacingForZoom(9), 22);
+assert.equal(markerSpacingForZoom(10), 0, "local zoom should show all visible stations");
+
+console.log("SYNOP decoder and map-density tests passed");

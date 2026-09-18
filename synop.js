@@ -5,7 +5,8 @@
   const DEFAULT_WMO = "10384";
   const RAW_SOURCE_URL = "https://www.ogimet.com/getsynop_help.phtml.en";
   const RAW_LICENSE_URL = "https://www.ogimet.com/license.phtml";
-  const STATION_SOURCE_URL = "https://opendata.dwd.de/weather/weather_reports/stationlist_synoptic_germany.csv";
+  const STATION_SOURCE_URL = "https://oscar.wmo.int/surface/";
+  const MIN_MAP_ZOOM = 4;
   let feed = null;
   const state = {
     wmo: DEFAULT_WMO, selected: null, map: null, markers: null, reportWmo: null,
@@ -206,7 +207,7 @@
   }
 
   function sourceCredit() {
-    return `<p class="muted wx-source">Station catalog: <a href="${STATION_SOURCE_URL}" target="_blank" rel="noreferrer">DWD Open Data</a> · raw reports via <a href="${RAW_SOURCE_URL}" target="_blank" rel="noreferrer">OGIMET getsynop</a> · <a href="${RAW_LICENSE_URL}" target="_blank" rel="noreferrer">source and usage notes</a> · WMO FM-12 SYNOP · UTC.</p>`;
+    return `<p class="muted wx-source">Station catalog: <a href="${STATION_SOURCE_URL}" target="_blank" rel="noreferrer">WMO OSCAR/Surface</a> · raw reports via <a href="${RAW_SOURCE_URL}" target="_blank" rel="noreferrer">OGIMET getsynop</a> · <a href="${RAW_LICENSE_URL}" target="_blank" rel="noreferrer">source and usage notes</a> · WMO FM-12 SYNOP · UTC.</p>`;
   }
 
   function renderStation(record) {
@@ -286,12 +287,18 @@
     const q = query.toLocaleLowerCase();
     const wmo = station.wmo.toLocaleLowerCase();
     const name = station.name.toLocaleLowerCase();
-    if (wmo === q) return 100;
-    if (name === q) return 95;
-    if (wmo.startsWith(q)) return 85;
-    if (name.startsWith(q)) return 75;
-    if (name.includes(q)) return 55;
-    if (wmo.includes(q)) return 45;
+    const territory = String(station.territory || "").toLocaleLowerCase();
+    const region = String(station.region || "").toLocaleLowerCase();
+    if (wmo === q) return 120;
+    if (name === q) return 115;
+    if (territory === q) return 105;
+    if (wmo.startsWith(q)) return 100;
+    if (name.startsWith(q)) return 90;
+    if (territory.startsWith(q)) return 80;
+    if (name.includes(q)) return 70;
+    if (territory.includes(q)) return 60;
+    if (region.includes(q)) return 50;
+    if (wmo.includes(q)) return 40;
     return 0;
   }
 
@@ -314,7 +321,8 @@
       const main = document.createElement("strong");
       main.textContent = stationLabel(station);
       const sub = document.createElement("span");
-      sub.textContent = `${station.lat.toFixed(3)}°, ${station.lon.toFixed(3)}° · ${Math.round(station.elev_m)} m`;
+      const elevation = Number.isFinite(Number(station.elev_m)) ? `${Math.round(Number(station.elev_m))} m` : "elevation —";
+      sub.textContent = [station.territory || station.region, `${station.lat.toFixed(3)}°, ${station.lon.toFixed(3)}°`, elevation].filter(Boolean).join(" · ");
       button.append(main, sub);
       button.addEventListener("click", () => selectStation(station));
       root.append(button);
@@ -376,31 +384,78 @@
     loadStationReport(station);
   }
 
+  function markerSpacingForZoom(zoom) {
+    if (zoom < MIN_MAP_ZOOM) return Infinity;
+    if (zoom === 4) return 105;
+    if (zoom === 5) return 82;
+    if (zoom === 6) return 62;
+    if (zoom === 7) return 46;
+    if (zoom === 8) return 32;
+    if (zoom === 9) return 22;
+    return 0;
+  }
+
+  function stationsForCurrentMap() {
+    if (!state.map || !feed?.stations) return { visible: [], shown: [] };
+    const zoom = state.map.getZoom();
+    if (zoom < MIN_MAP_ZOOM) return { visible: [], shown: [] };
+    const bounds = state.map.getBounds();
+    const visible = feed.stations.filter((station) => bounds.contains([station.lat, station.lon]));
+    const spacing = markerSpacingForZoom(zoom);
+    if (!spacing) return { visible, shown: visible };
+
+    const occupied = new Set();
+    const shown = [];
+    const ordered = [...visible].sort((a, b) => {
+      if (a.wmo === state.wmo) return -1;
+      if (b.wmo === state.wmo) return 1;
+      return a.wmo.localeCompare(b.wmo);
+    });
+    for (const station of ordered) {
+      const point = state.map.latLngToContainerPoint([station.lat, station.lon]);
+      const key = `${Math.floor(point.x / spacing)}:${Math.floor(point.y / spacing)}`;
+      if (occupied.has(key)) continue;
+      occupied.add(key);
+      shown.push(station);
+    }
+    return { visible, shown };
+  }
+
   function renderMapStations() {
     if (!state.map || !state.markers || !feed?.stations) return;
     state.markers.clearLayers();
-    for (const station of feed.stations) {
+    const zoom = state.map.getZoom();
+    if (zoom < MIN_MAP_ZOOM) {
+      $("synopMapStatus").textContent = "Zoom in to show stations";
+      return;
+    }
+
+    const { visible, shown } = stationsForCurrentMap();
+    const radius = zoom <= 5 ? 4 : zoom <= 7 ? 4.5 : 5;
+    for (const station of shown) {
       const marker = L.circleMarker([station.lat, station.lon], {
-        radius: 4.5, weight: 1.4, fillOpacity: 0.72,
+        radius, weight: 1.4, fillOpacity: 0.72,
       });
-      marker.bindTooltip(stationLabel(station), { direction: "top" });
+      marker.bindTooltip(`${stationLabel(station)}${station.territory ? ` · ${station.territory}` : ""}`, { direction: "top" });
       marker.on("click", () => selectStation(station, { focusMap: false }));
       marker.addTo(state.markers);
     }
-    $("synopMapStatus").textContent = `${feed.stations.length} stations`;
+    $("synopMapStatus").textContent = shown.length === visible.length
+      ? `${shown.length} stations in view`
+      : `${shown.length} shown · ${visible.length} in view`;
   }
 
   function initMap() {
     if (state.map) return;
-    state.map = L.map("synopMap", { zoomControl: true, fadeAnimation: false }).setView([51.0, 10.4], 6);
+    state.map = L.map("synopMap", { zoomControl: true, fadeAnimation: false, worldCopyJump: true }).setView([20, 0], 2);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "© OpenStreetMap contributors",
     }).addTo(state.map);
     state.markers = L.layerGroup().addTo(state.map);
     L.control.scale({ imperial: false, position: "bottomleft" }).addTo(state.map);
+    state.map.on("moveend zoomend", renderMapStations);
     renderMapStations();
-    if (state.selected) state.map.setView([state.selected.lat, state.selected.lon], 7);
   }
 
   async function loadCatalog() {
@@ -412,8 +467,8 @@
       feed = await response.json();
       const stations = Array.isArray(feed.stations) ? feed.stations : [];
       $("synopGenerated").textContent = feed.generated_at
-        ? `${stations.length} stations · catalog refreshed ${utc(feed.generated_at)}`
-        : `${stations.length} stations`;
+        ? `${stations.length.toLocaleString()} stations · ${feed.territory_count || "—"} territories · catalog snapshot ${utc(feed.generated_at)}`
+        : `${stations.length.toLocaleString()} stations`;
       renderMapStations();
 
       let selected = stations.find((station) => station.wmo === state.wmo);
@@ -467,6 +522,6 @@
     setInterval(loadCatalog, 15 * 60 * 1000);
   }
 
-  if (typeof module !== "undefined" && module.exports) module.exports = { decode, observationAge };
+  if (typeof module !== "undefined" && module.exports) module.exports = { decode, observationAge, markerSpacingForZoom };
   if (typeof document !== "undefined") init();
 })();
