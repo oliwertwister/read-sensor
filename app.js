@@ -433,20 +433,237 @@ function tafPeriod(period) {
   row.innerHTML = `<span class="wx-badge wx-${change.toLowerCase()}">${change}${prob}</span><span class="taf-time">${utcTime(period.timeFrom).replace(" UTC","")} → ${utcTime(period.timeTo).replace(" UTC","")}</span><span>${wind}</span><span>${period.visib ? `${period.visib} mi` : "—"}</span><span>${period.wxString || "NSW"}</span><span>${cloudText(period.clouds)}</span>`;
   return row;
 }
-async function loadAviationWeather() {
-  const root = $("aviationDetail");
+const aviationState = {
+  station: "EDDB",
+  selected: null,
+  map: null,
+  markers: null,
+  searchTimer: null,
+  mapTimer: null,
+  searchSequence: 0,
+  mapSequence: 0,
+};
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function airportDisplayName(station) {
+  if (!station) return "—";
+  const codes = [station.icao || station.id, station.iata].filter(Boolean).join(" / ");
+  return station.name && station.name !== station.id ? `${codes} · ${station.name}` : codes;
+}
+
+function airportLocationText(station) {
+  return [station.state, station.country].filter(Boolean).join(" · ");
+}
+
+function renderAviationSearchResults(stations) {
+  const root = $("airportResults");
+  root.replaceChildren();
+  if (!stations.length) {
+    const empty = document.createElement("div");
+    empty.className = "airport-result-empty";
+    empty.textContent = "No matching airports.";
+    root.append(empty);
+    root.hidden = false;
+    return;
+  }
+  for (const station of stations) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "airport-result";
+    button.setAttribute("role", "option");
+    const main = document.createElement("strong");
+    main.textContent = airportDisplayName(station);
+    const sub = document.createElement("span");
+    const capabilities = [station.metar ? "METAR" : null, station.taf ? "TAF" : null].filter(Boolean).join(" + ");
+    sub.textContent = [airportLocationText(station), capabilities].filter(Boolean).join(" · ");
+    button.append(main, sub);
+    button.addEventListener("click", () => selectAviationStation(station));
+    root.append(button);
+  }
+  root.hidden = false;
+}
+
+async function searchAirports(query) {
+  const q = query.trim();
+  const root = $("airportResults");
+  if (q.length < 2) {
+    root.hidden = true;
+    root.replaceChildren();
+    $("airportSearchStatus").textContent = "";
+    return;
+  }
+  const sequence = ++aviationState.searchSequence;
+  $("airportSearchStatus").textContent = "…";
   try {
-    const data = await fetchJson("/api/v1/weather/aviation"); const m = data.metar; const t = data.taf;
-    if (!m || !t) throw new Error("Missing EDDB report");
-    const summary = document.createElement("div"); summary.className = "aviation-summary";
-    summary.innerHTML = `<div class="wx-panel"><div class="panel-title"><h3>Current conditions (METAR)</h3><span class="flight-badge">${m.fltCat || "—"}</span></div><p class="muted">Observed ${utcTime(m.obsTime)}</p><div class="metric-strip"><div><small>Temperature</small><strong>${m.temp} °C</strong><span>Dew point ${m.dewp} °C</span></div><div><small>Wind</small><strong>${degrees(m.wdir)} · ${knots(m.wspd)}</strong><span>${m.wgst ? `Gust ${m.wgst} kt` : "No gust reported"}</span></div><div><small>Visibility</small><strong>${m.visib} mi</strong><span>${m.visib >= 6 ? "CAVOK / good" : "Reported"}</span></div><div><small>Cloud</small><strong>${cloudText(m.clouds)}</strong></div><div><small>QNH</small><strong>${Math.round(m.altim)} hPa</strong></div></div><p class="wx-raw raw-strip">${m.rawOb}</p></div>`;
-    const decoded = document.createElement("div"); decoded.className="wx-panel decoded-panel";
-    decoded.innerHTML=`<h3>METAR decoded</h3><dl class="wx-details"><dt>Station</dt><dd>${m.name} (EDDB)</dd><dt>Observed</dt><dd>${utcTime(m.obsTime)}</dd><dt>Wind</dt><dd>${degrees(m.wdir)} at ${knots(m.wspd)}</dd><dt>Visibility</dt><dd>${m.visib} statute miles</dd><dt>Clouds</dt><dd>${cloudText(m.clouds)}</dd><dt>Temperature / dew point</dt><dd>${m.temp} °C / ${m.dewp} °C</dd><dt>QNH</dt><dd>${Math.round(m.altim)} hPa</dd><dt>Flight category</dt><dd>${m.fltCat || "—"}</dd></dl>`;
-    summary.append(decoded);
-    const taf = document.createElement("div"); taf.className="wx-panel taf-panel"; taf.innerHTML=`<h3>Forecast (TAF)</h3><p class="muted">Issued ${utcTime(t.issueTime)} · valid ${utcTime(t.validTimeFrom)} → ${utcTime(t.validTimeTo)}</p><div class="taf-head"><span>Change</span><span>Period (UTC)</span><span>Wind</span><span>Visibility</span><span>Weather</span><span>Cloud</span></div>`; (t.fcsts||[]).forEach(x=>taf.append(tafPeriod(x))); const raw=document.createElement("p"); raw.className="wx-raw raw-strip"; raw.textContent=t.rawTAF; taf.append(raw);
-    const source=document.createElement("p"); source.className="muted wx-source"; source.textContent="Source: Aviation Weather Center Data API · EDDB · times in UTC.";
-    root.replaceChildren(summary, taf, source);
-  } catch(e) { console.error("aviation_weather_failed",e); root.textContent="BER aviation weather unavailable."; }
+    const payload = await fetchJson("/api/v1/weather/airports", { q });
+    if (sequence !== aviationState.searchSequence) return;
+    renderAviationSearchResults(payload.stations || []);
+    $("airportSearchStatus").textContent = "";
+  } catch (error) {
+    if (sequence !== aviationState.searchSequence) return;
+    console.error("airport_search_failed", error);
+    root.hidden = false;
+    root.textContent = "Airport search unavailable.";
+    $("airportSearchStatus").textContent = "!";
+  }
+}
+
+function selectAviationStation(station, { focusMap = true } = {}) {
+  aviationState.station = station.icao || station.id;
+  aviationState.selected = station;
+  $("airportSearch").value = airportDisplayName(station);
+  $("airportResults").hidden = true;
+  $("aviationSelected").textContent = aviationState.station;
+  if (focusMap && aviationState.map && Number.isFinite(station.lat) && Number.isFinite(station.lon)) {
+    aviationState.map.setView([station.lat, station.lon], Math.max(aviationState.map.getZoom(), 8));
+  }
+  loadAviationWeather(aviationState.station);
+}
+
+function metarPanel(m, info) {
+  if (!m) {
+    const panel = document.createElement("div");
+    panel.className = "wx-panel aviation-no-report";
+    panel.innerHTML = `<h3>Current conditions (METAR)</h3><p class="muted">No recent METAR is available for ${escapeHtml(info.icao || info.id)}.</p>`;
+    return panel;
+  }
+  const summary = document.createElement("div");
+  summary.className = "aviation-summary";
+  summary.innerHTML = `<div class="wx-panel"><div class="panel-title"><h3>Current conditions (METAR)</h3><span class="flight-badge">${escapeHtml(m.fltCat || "—")}</span></div><p class="muted">Observed ${escapeHtml(utcTime(m.obsTime))}</p><div class="metric-strip"><div><small>Temperature</small><strong>${escapeHtml(m.temp)} °C</strong><span>Dew point ${escapeHtml(m.dewp)} °C</span></div><div><small>Wind</small><strong>${escapeHtml(degrees(m.wdir))} · ${escapeHtml(knots(m.wspd))}</strong><span>${m.wgst ? `Gust ${escapeHtml(m.wgst)} kt` : "No gust reported"}</span></div><div><small>Visibility</small><strong>${escapeHtml(m.visib)} mi</strong><span>${Number(m.visib) >= 6 ? "Good" : "Reported"}</span></div><div><small>Cloud</small><strong>${escapeHtml(cloudText(m.clouds))}</strong></div><div><small>QNH</small><strong>${Number.isFinite(Number(m.altim)) ? Math.round(m.altim) : "—"} hPa</strong></div></div><p class="wx-raw raw-strip">${escapeHtml(m.rawOb || "")}</p></div>`;
+  const decoded = document.createElement("div");
+  decoded.className = "wx-panel decoded-panel";
+  decoded.innerHTML = `<h3>METAR decoded</h3><dl class="wx-details"><dt>Station</dt><dd>${escapeHtml(info.name || m.name || info.id)} (${escapeHtml(info.icao || info.id)})</dd><dt>Observed</dt><dd>${escapeHtml(utcTime(m.obsTime))}</dd><dt>Wind</dt><dd>${escapeHtml(degrees(m.wdir))} at ${escapeHtml(knots(m.wspd))}</dd><dt>Visibility</dt><dd>${escapeHtml(m.visib)} statute miles</dd><dt>Clouds</dt><dd>${escapeHtml(cloudText(m.clouds))}</dd><dt>Temperature / dew point</dt><dd>${escapeHtml(m.temp)} °C / ${escapeHtml(m.dewp)} °C</dd><dt>QNH</dt><dd>${Number.isFinite(Number(m.altim)) ? Math.round(m.altim) : "—"} hPa</dd><dt>Flight category</dt><dd>${escapeHtml(m.fltCat || "—")}</dd></dl>`;
+  summary.append(decoded);
+  return summary;
+}
+
+function tafPanel(t, info) {
+  const taf = document.createElement("div");
+  taf.className = "wx-panel taf-panel";
+  if (!t) {
+    taf.innerHTML = `<h3>Forecast (TAF)</h3><p class="muted">No current TAF is available for ${escapeHtml(info.icao || info.id)}.</p>`;
+    return taf;
+  }
+  taf.innerHTML = `<h3>Forecast (TAF)</h3><p class="muted">Issued ${escapeHtml(utcTime(t.issueTime))} · valid ${escapeHtml(utcTime(t.validTimeFrom))} → ${escapeHtml(utcTime(t.validTimeTo))}</p><div class="taf-head"><span>Change</span><span>Period (UTC)</span><span>Wind</span><span>Visibility</span><span>Weather</span><span>Cloud</span></div>`;
+  (t.fcsts || []).forEach((period) => taf.append(tafPeriod(period)));
+  const raw = document.createElement("p");
+  raw.className = "wx-raw raw-strip";
+  raw.textContent = t.rawTAF || "";
+  taf.append(raw);
+  return taf;
+}
+
+async function loadAviationWeather(station = aviationState.station) {
+  const root = $("aviationDetail");
+  root.textContent = `Loading ${station}…`;
+  try {
+    const data = await fetchJson("/api/v1/weather/aviation", { station });
+    if (station !== aviationState.station) return;
+    const info = data.station_info || { id: station, icao: station, name: station };
+    aviationState.selected = info;
+    $("aviationSelected").textContent = info.icao || info.id;
+    if (!$("airportSearch").matches(":focus")) $("airportSearch").value = airportDisplayName(info);
+    const source = document.createElement("p");
+    source.className = "muted wx-source";
+    source.textContent = `Aviation Weather Center Data API · ${info.icao || info.id} · times in UTC.`;
+    root.replaceChildren(metarPanel(data.metar, info), tafPanel(data.taf, info), source);
+  } catch (error) {
+    console.error("aviation_weather_failed", error);
+    root.textContent = `${station} aviation weather unavailable.`;
+  }
+}
+
+function renderAviationMapStations(stations) {
+  if (!aviationState.markers) return;
+  aviationState.markers.clearLayers();
+  for (const station of stations) {
+    const marker = L.circleMarker([station.lat, station.lon], {
+      radius: station.taf ? 5.5 : 4.5,
+      weight: 1.5,
+      fillOpacity: 0.72,
+    });
+    marker.bindTooltip(airportDisplayName(station), { direction: "top" });
+    marker.on("click", () => selectAviationStation(station, { focusMap: false }));
+    marker.addTo(aviationState.markers);
+  }
+  $("aviationMapStatus").textContent = `${stations.length} airports in view`;
+}
+
+async function loadAviationMapStations() {
+  const map = aviationState.map;
+  if (!map) return;
+  const bounds = map.getBounds();
+  const latSpan = bounds.getNorth() - bounds.getSouth();
+  const lonSpan = bounds.getEast() - bounds.getWest();
+  if (latSpan > 20 || lonSpan > 30) {
+    aviationState.markers?.clearLayers();
+    $("aviationMapStatus").textContent = "Zoom in to show airports";
+    return;
+  }
+  const bbox = [bounds.getSouth(), bounds.getWest(), bounds.getNorth(), bounds.getEast()]
+    .map((value) => value.toFixed(4))
+    .join(",");
+  const sequence = ++aviationState.mapSequence;
+  $("aviationMapStatus").textContent = "Loading airports…";
+  try {
+    const payload = await fetchJson("/api/v1/weather/airports", { bbox });
+    if (sequence !== aviationState.mapSequence) return;
+    renderAviationMapStations(payload.stations || []);
+  } catch (error) {
+    if (sequence !== aviationState.mapSequence) return;
+    console.error("aviation_map_failed", error);
+    $("aviationMapStatus").textContent = "Airport map data unavailable";
+  }
+}
+
+function initAviationMap() {
+  if (aviationState.map) return;
+  aviationState.map = L.map("aviationMap", { zoomControl: true, fadeAnimation: false }).setView([51.0, 10.4], 6);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "© OpenStreetMap contributors",
+  }).addTo(aviationState.map);
+  aviationState.markers = L.layerGroup().addTo(aviationState.map);
+  L.control.scale({ imperial: false, position: "bottomleft" }).addTo(aviationState.map);
+  aviationState.map.on("moveend zoomend", () => {
+    clearTimeout(aviationState.mapTimer);
+    aviationState.mapTimer = setTimeout(loadAviationMapStations, 220);
+  });
+  const station = aviationState.selected;
+  if (station && Number.isFinite(station.lat) && Number.isFinite(station.lon)) {
+    aviationState.map.setView([station.lat, station.lon], 7);
+  }
+  loadAviationMapStations();
+}
+
+function initAviationSearch() {
+  const input = $("airportSearch");
+  input.value = aviationState.station;
+  input.addEventListener("input", () => {
+    clearTimeout(aviationState.searchTimer);
+    aviationState.searchTimer = setTimeout(() => searchAirports(input.value), 260);
+  });
+  input.addEventListener("focus", () => {
+    if (input.value.trim().length >= 2 && $("airportResults").children.length) $("airportResults").hidden = false;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") $("airportResults").hidden = true;
+    if (event.key === "Enter") {
+      const first = $("airportResults").querySelector(".airport-result");
+      if (first) first.click();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".airport-search-control")) $("airportResults").hidden = true;
+  });
 }
 
 const ICON_PRODUCTS = {
@@ -622,6 +839,12 @@ function initTabs() {
           }
         }));
       }
+      if (button.dataset.tab === "aviation") {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (!aviationState.map) initAviationMap();
+          else aviationState.map.invalidateSize({ pan: false, animate: false });
+        }));
+      }
     });
   });
 }
@@ -719,6 +942,7 @@ function initMap() {
 async function init() {
   initTabs();
   initSensorModes();
+  initAviationSearch();
   initIconCharts();
   initSatellite();
   window.GeometryUI?.init();

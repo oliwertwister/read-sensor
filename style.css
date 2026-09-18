@@ -962,3 +962,99 @@ a { color: #58a6ff; }
   .sensors-controls { gap:18px; }
   .sensor-mode-selector button { padding-inline:10px; }
 }
+
+/* Worldwide aviation weather search + airport map */
+.aviation-heading {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:22px;
+  margin-bottom:16px;
+}
+.aviation-heading h2,.aviation-heading p { margin:0; }
+.aviation-heading p { margin-top:5px; }
+.airport-search-control {
+  position:relative;
+  display:grid;
+  gap:5px;
+  width:min(460px,100%);
+  z-index:1200;
+}
+.airport-search-control > label { color:#8b949e; font-size:.78rem; font-weight:600; }
+.airport-search-box { position:relative; }
+#airportSearch {
+  width:100%;
+  min-height:44px;
+  padding:9px 42px 9px 13px;
+  border:1px solid #3d444d;
+  border-radius:12px;
+  outline:none;
+  color:#e6edf3;
+  background:#161b22;
+  font:inherit;
+  box-shadow:0 7px 22px rgba(1,4,9,.15);
+}
+#airportSearch:focus { border-color:#58a6ff; box-shadow:0 0 0 3px rgba(88,166,255,.13),0 7px 22px rgba(1,4,9,.18); }
+.airport-search-status { position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#8b949e; font-weight:700; pointer-events:none; }
+.airport-results {
+  position:absolute;
+  top:calc(100% + 6px);
+  left:0;
+  right:0;
+  max-height:330px;
+  overflow:auto;
+  padding:5px;
+  border:1px solid #3d444d;
+  border-radius:12px;
+  background:#161b22;
+  box-shadow:0 16px 40px rgba(0,0,0,.38);
+}
+.airport-result {
+  display:grid;
+  gap:3px;
+  width:100%;
+  padding:10px 11px;
+  border:0;
+  border-radius:8px;
+  text-align:left;
+  background:transparent;
+}
+.airport-result:hover,.airport-result:focus { background:#21262d; outline:none; }
+.airport-result strong { color:#f0f6fc; font-size:.9rem; font-weight:650; }
+.airport-result span { color:#8b949e; font-size:.76rem; white-space:normal; }
+.airport-result-empty { padding:13px 12px; color:#8b949e; font-size:.84rem; }
+.aviation-map-shell {
+  position:relative;
+  margin:14px 0 18px;
+  border:1px solid #30363d;
+  border-radius:13px;
+  overflow:hidden;
+  background:#161b22;
+}
+#aviationMap { height:360px; }
+.aviation-map-overlay {
+  position:absolute;
+  z-index:800;
+  top:12px;
+  right:12px;
+  display:grid;
+  gap:2px;
+  min-width:150px;
+  padding:8px 11px;
+  border:1px solid rgba(240,246,252,.16);
+  border-radius:9px;
+  background:rgba(13,17,23,.88);
+  backdrop-filter:blur(8px);
+  pointer-events:none;
+}
+.aviation-map-overlay strong { font-size:.9rem; }
+.aviation-map-overlay span { color:#8b949e; font-size:.73rem; }
+.aviation-no-report { min-height:100px; }
+#models .model-heading { margin-top:0; }
+#models .model-figure { margin-top:4px; }
+@media(max-width:760px){
+  .aviation-heading { align-items:stretch; flex-direction:column; }
+  .airport-search-control { width:100%; }
+  #aviationMap { height:310px; }
+  .aviation-map-overlay { left:12px; right:auto; max-width:calc(100% - 24px); }
+}

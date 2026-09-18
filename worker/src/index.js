@@ -230,19 +230,155 @@ async function devices(request, env) {
   return json(request, env, { devices: results });
 }
 
-async function aviationWeather(request, env) {
-  const headers = { "User-Agent": "read-sensor/1.0 weather-dashboard" };
-  const base = "https://aviationweather.gov/api/data";
-  const [metarResponse, tafResponse] = await Promise.all([
-    fetch(`${base}/metar?ids=EDDB&format=json&hours=3`, { headers }),
-    fetch(`${base}/taf?ids=EDDB&format=json`, { headers }),
-  ]);
-  if (!metarResponse.ok || !tafResponse.ok) {
+const AVIATION_BASE = "https://aviationweather.gov/api/data";
+const AVIATION_HEADERS = { "User-Agent": "read-sensor/1.1 weather-dashboard" };
+const AVIATION_CATALOG_URL = "https://aviationweather.gov/data/cache/stations.cache.json.gz";
+const AVIATION_CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
+let aviationCatalog = null;
+let aviationCatalogLoadedAt = 0;
+
+function validAviationStation(value) {
+  return typeof value === "string" && /^[A-Z0-9]{3,8}$/.test(value);
+}
+
+function normalizedAviationStation(station) {
+  if (!station || typeof station !== "object") return null;
+  const id = String(station.icaoId || station.id || "").toUpperCase();
+  const lat = Number(station.lat);
+  const lon = Number(station.lon);
+  if (!validAviationStation(id) || !Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const siteType = Array.isArray(station.siteType) ? station.siteType : [];
+  return {
+    id,
+    icao: station.icaoId || id,
+    iata: station.iataId || null,
+    name: station.site || station.name || id,
+    state: station.state || null,
+    country: station.country || null,
+    lat,
+    lon,
+    elev: Number.isFinite(Number(station.elev)) ? Number(station.elev) : null,
+    metar: siteType.includes("METAR"),
+    taf: siteType.includes("TAF"),
+  };
+}
+
+async function responseJsonOrEmpty(response) {
+  if (response.status === 204) return [];
+  if (!response.ok) throw new Error(`AWC HTTP ${response.status}`);
+  return await response.json();
+}
+
+async function decodeGzipJson(response) {
+  if (!response.ok) throw new Error(`AWC catalog HTTP ${response.status}`);
+  const body = response.body;
+  if (!body) return [];
+  const stream = body.pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).json();
+}
+
+async function loadAviationCatalog() {
+  const now = Date.now();
+  if (aviationCatalog && now - aviationCatalogLoadedAt < AVIATION_CATALOG_TTL_MS) {
+    return aviationCatalog;
+  }
+  const response = await fetch(AVIATION_CATALOG_URL, { headers: AVIATION_HEADERS });
+  const source = await decodeGzipJson(response);
+  aviationCatalog = source
+    .map(normalizedAviationStation)
+    .filter((station) => station && (station.metar || station.taf));
+  aviationCatalogLoadedAt = now;
+  return aviationCatalog;
+}
+
+function aviationSearchScore(station, query) {
+  const fields = [station.icao, station.iata, station.name, station.state, station.country]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  const q = query.toLowerCase();
+  let score = 0;
+  for (const field of fields) {
+    if (field === q) score = Math.max(score, 100);
+    else if (field.startsWith(q)) score = Math.max(score, 70);
+    else if (field.includes(q)) score = Math.max(score, 40);
+  }
+  if (score > 0) {
+    if (station.taf) score += 3;
+    if (station.metar) score += 2;
+  }
+  return score;
+}
+
+function parseAviationBbox(value) {
+  if (typeof value !== "string") return null;
+  const parts = value.split(",").map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) return null;
+  const [lat0, lon0, lat1, lon1] = parts;
+  if (lat0 < -90 || lat1 > 90 || lon0 < -180 || lon1 > 180 || lat1 <= lat0 || lon1 <= lon0) return null;
+  if (lat1 - lat0 > 20 || lon1 - lon0 > 30) return null;
+  return parts;
+}
+
+async function aviationStations(request, env, url) {
+  const query = (url.searchParams.get("q") || "").trim();
+  const bboxValue = url.searchParams.get("bbox");
+  try {
+    if (bboxValue) {
+      const bbox = parseAviationBbox(bboxValue);
+      if (!bbox) return json(request, env, { error: "invalid_bbox" }, 400);
+      const upstream = new URL(`${AVIATION_BASE}/stationinfo`);
+      upstream.searchParams.set("bbox", bbox.join(","));
+      upstream.searchParams.set("format", "json");
+      const stations = await responseJsonOrEmpty(await fetch(upstream, { headers: AVIATION_HEADERS }));
+      const normalized = stations
+        .map(normalizedAviationStation)
+        .filter((station) => station && (station.metar || station.taf))
+        .slice(0, 300);
+      return json(request, env, { stations: normalized });
+    }
+
+    if (query.length < 2 || query.length > 64) {
+      return json(request, env, { error: "invalid_query" }, 400);
+    }
+    const catalog = await loadAviationCatalog();
+    const matches = catalog
+      .map((station) => ({ station, score: aviationSearchScore(station, query) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score || a.station.icao.localeCompare(b.station.icao))
+      .slice(0, 30)
+      .map(({ station }) => station);
+    return json(request, env, { stations: matches });
+  } catch (error) {
+    console.error("aviation_stations_upstream", error);
+    return json(request, env, { error: "aviation_stations_upstream" }, 502);
+  }
+}
+
+async function aviationWeather(request, env, url) {
+  const station = (url.searchParams.get("station") || "EDDB").trim().toUpperCase();
+  if (!validAviationStation(station)) {
+    return json(request, env, { error: "invalid_station" }, 400);
+  }
+  const stationUrl = `${AVIATION_BASE}/stationinfo?ids=${encodeURIComponent(station)}&format=json`;
+  const metarUrl = `${AVIATION_BASE}/metar?ids=${encodeURIComponent(station)}&format=json&hours=3`;
+  const tafUrl = `${AVIATION_BASE}/taf?ids=${encodeURIComponent(station)}&format=json`;
+  try {
+    const [stationResponse, metarResponse, tafResponse] = await Promise.all([
+      fetch(stationUrl, { headers: AVIATION_HEADERS }),
+      fetch(metarUrl, { headers: AVIATION_HEADERS }),
+      fetch(tafUrl, { headers: AVIATION_HEADERS }),
+    ]);
+    const [stationInfo, metars, tafs] = await Promise.all([
+      responseJsonOrEmpty(stationResponse),
+      responseJsonOrEmpty(metarResponse),
+      responseJsonOrEmpty(tafResponse),
+    ]);
+    const info = normalizedAviationStation(stationInfo[0]) || { id: station, icao: station, name: station };
+    return json(request, env, { station, station_info: info, metar: metars[0] || null, taf: tafs[0] || null });
+  } catch (error) {
+    console.error("aviation_weather_upstream", error);
     return json(request, env, { error: "aviation_weather_upstream" }, 502);
   }
-  const metars = await metarResponse.json();
-  const tafs = await tafResponse.json();
-  return json(request, env, { station: "EDDB", airport: "Berlin Brandenburg Airport (BER)", metar: metars[0] || null, taf: tafs[0] || null });
 }
 
 function githubDispatchSettings(env) {
@@ -325,7 +461,10 @@ export default {
         return await devices(request, env);
       }
       if (url.pathname === "/api/v1/weather/aviation" && request.method === "GET") {
-        return await aviationWeather(request, env);
+        return await aviationWeather(request, env, url);
+      }
+      if (url.pathname === "/api/v1/weather/airports" && request.method === "GET") {
+        return await aviationStations(request, env, url);
       }
 
       return json(request, env, { error: "not_found" }, 404);
