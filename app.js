@@ -68,6 +68,7 @@ const CPU_TIME_ZONE = "Europe/Berlin";
 const CPU_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CPU_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const CPU_GAP_THRESHOLD_MS = 7.5 * 60 * 1000;
+const CPU_TICK_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 function formatCpuTick(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
@@ -153,19 +154,11 @@ function cpuWindow(now = Date.now()) {
 function updateCpuRange(timeline) {
   const el = $("cpuRange");
   if (!el) return;
-  const dayFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short", year: "numeric" });
-  const timeFmt = new Intl.DateTimeFormat("en-GB", { timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short" });
-  const first = new Date(timeline.start);
-  const last = new Date(timeline.end);
-  const sameDay = dayFmt.format(first) === dayFmt.format(last);
-  const range = sameDay
-    ? `${dayFmt.format(first)} · ${timeFmt.format(first)}–${timeFmt.format(last)}`
-    : `${dayFmt.format(first)} ${timeFmt.format(first)} → ${dayFmt.format(last)} ${timeFmt.format(last)}`;
   const gapTotal = timeline.gaps.reduce((total, gap) => total + gap.to - gap.from, 0);
   const gapSummary = timeline.gaps.length
-    ? `${timeline.gaps.length} no-data ${timeline.gaps.length === 1 ? "period" : "periods"} · ${formatDuration(gapTotal)} total`
+    ? `${timeline.gaps.length} no-data ${timeline.gaps.length === 1 ? "period" : "periods"} · ${formatDuration(gapTotal)} downtime`
     : "No downtime detected";
-  el.textContent = `${range} · ${timeline.visible.length.toLocaleString()} samples · ${gapSummary}`;
+  el.textContent = `Sampling every 5 min · rolling 24 h · ${timeline.visible.length.toLocaleString()} readings received · ${gapSummary}`;
 }
 
 const cpuDowntimePlugin = {
@@ -262,9 +255,12 @@ function renderReadings() {
           type: "linear",
           min: timeline.start,
           max: timeline.end,
+          title: { display: true, text: "Time (Europe/Berlin) · 3-hour intervals" },
           ticks: {
-            maxTicksLimit: 8,
+            stepSize: CPU_TICK_INTERVAL_MS,
             maxRotation: 0,
+            autoSkip: true,
+            autoSkipPadding: 14,
             callback(value) {
               return formatCpuTick(new Date(value));
             },
