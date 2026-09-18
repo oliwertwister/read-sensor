@@ -57,10 +57,9 @@ function updateAge() {
   const minutes = Math.max(0, Math.round((Date.now() - readingTime(latest)) / 60000));
   $("age").textContent = minutes < 1 ? "now" : `${minutes} min`;
   const stale = minutes > 15;
-  setStatus(
-    `${stale ? "Stale" : "Live"} · ${state.device} · ${readingTime(latest).toLocaleString()}`,
-    stale ? "warning" : "ok",
-  );
+  setStatus(stale ? "Stale" : "Live", stale ? "warning" : "ok");
+  const sensorAge = $("sensorAge");
+  if (sensorAge) sensorAge.textContent = minutes < 1 ? "now" : `${minutes} min`;
 }
 
 
@@ -207,14 +206,22 @@ function renderReadings() {
   if (!latest) {
     $("cpuNow").textContent = "waiting";
     $("age").textContent = "—";
-    $("raw").textContent = "No sensor data yet.";
-    setStatus(`Waiting for ${state.device}`, "warning");
+    $("raw").textContent = "No data yet.";
+    if ($("sensorNow")) $("sensorNow").textContent = "—";
+    if ($("sensorAge")) $("sensorAge").textContent = "—";
+    if ($("sensorMetric")) $("sensorMetric").textContent = state.metric.replaceAll("_", " ");
+    setStatus("Waiting", "warning");
   } else {
-    $("cpuNow").textContent = `${Number(latest.value).toFixed(1)} °C`;
+    const unit = latest.unit ? ` ${latest.unit === "C" ? "°C" : latest.unit}` : "";
+    const formattedValue = `${Number(latest.value).toFixed(1)}${unit}`;
+    $("cpuNow").textContent = formattedValue;
     $("raw").textContent = JSON.stringify(latest, null, 2);
+    if ($("sensorNow")) $("sensorNow").textContent = formattedValue;
+    if ($("sensorMetric")) $("sensorMetric").textContent = latest.metric.replaceAll("_", " ");
     updateAge();
   }
 
+  renderSensorHistory();
   const timeline = cpuWindow();
   updateCpuRange(timeline);
   if (state.chart) {
@@ -304,7 +311,7 @@ function renderReadings() {
 }
 
 async function loadHistory() {
-  setStatus(`Loading ${state.device}…`);
+  setStatus("Loading…");
   try {
     const payload = await fetchJson("/api/v1/history", {
       device: state.device,
@@ -549,6 +556,54 @@ function initSatellite() {
   loadSatellite();
 }
 
+function setSensorMode(mode) {
+  const validModes = new Set(["overview", "chart", "history"]);
+  if (!validModes.has(mode)) return;
+  document.querySelectorAll("[data-sensor-mode]").forEach((button) => {
+    const active = button.dataset.sensorMode === mode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  document.querySelectorAll(".sensor-mode-view").forEach((view) => view.classList.remove("active"));
+  $(`sensorView${mode[0].toUpperCase()}${mode.slice(1)}`)?.classList.add("active");
+  if (mode === "chart" && state.chart) state.chart.resize();
+}
+
+function initSensorModes() {
+  document.querySelectorAll("[data-sensor-mode]").forEach((button) => {
+    button.addEventListener("click", () => setSensorMode(button.dataset.sensorMode));
+  });
+}
+
+function renderSensorHistory() {
+  const body = $("sensorHistory");
+  if (!body) return;
+  body.replaceChildren();
+  const rows = state.readings.slice(-30).reverse();
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 3;
+    cell.className = "muted";
+    cell.textContent = "No data yet.";
+    row.append(cell);
+    body.append(row);
+    return;
+  }
+  for (const reading of rows) {
+    const row = document.createElement("tr");
+    const time = document.createElement("td");
+    const value = document.createElement("td");
+    const unit = document.createElement("td");
+    const date = readingTime(reading);
+    time.textContent = date ? date.toLocaleString([], { dateStyle: "short", timeStyle: "medium" }) : "—";
+    value.textContent = Number(reading.value).toFixed(1);
+    unit.textContent = reading.unit === "C" ? "°C" : (reading.unit || "—");
+    row.append(time, value, unit);
+    body.append(row);
+  }
+}
+
 function initTabs() {
   document.querySelectorAll("nav button").forEach((button) => {
     button.addEventListener("click", () => {
@@ -663,13 +718,10 @@ function initMap() {
 }
 async function init() {
   initTabs();
+  initSensorModes();
   initIconCharts();
   initSatellite();
   window.GeometryUI?.init();
-  const healthUrl = apiUrl("/health");
-  $("apiLink").href = healthUrl;
-  $("apiLink").textContent = healthUrl.origin;
-
   $("deviceSelect").addEventListener("change", async (event) => {
     state.device = event.target.value;
     state.readings = [];

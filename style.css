@@ -686,16 +686,7 @@ h1 { margin: 0; }
 .subtitle, .muted { color: #8b949e; }
 .subtitle { margin: 4px 0 0; font-size: 0.9rem; }
 
-.header-status {
-  display: grid;
-  grid-template-columns: auto minmax(180px, auto);
-  align-items: center;
-  gap: 6px 10px;
-  text-align: right;
-}
-
-.header-status label { color: #8b949e; font-size: 0.78rem; }
-.status { grid-column: 1 / -1; color: #8b949e; font-size: 0.82rem; }
+.status { color: #8b949e; font-size: 0.78rem; }
 .status.ok { color: #3fb950; }
 .status.warning { color: #d29922; }
 .status.error { color: #f85149; }
@@ -776,7 +767,6 @@ a { color: #58a6ff; }
 
 @media (max-width: 680px) {
   header { align-items: flex-start; padding: 18px; flex-direction: column; }
-  .header-status { width: 100%; text-align: left; }
   select { width: 100%; min-width: 0; }
   nav { padding: 12px 18px; }
   main { padding: 22px 18px; }
@@ -933,3 +923,42 @@ a { color: #58a6ff; }
 .synop-groups strong{font-size:.9rem;font-weight:500}
 @media(max-width:900px){.synop-heading{align-items:stretch;flex-direction:column}.synop-controls{width:100%}.synop-metrics{grid-template-columns:repeat(2,1fr)}.synop-groups>div{grid-template-columns:80px 100px minmax(0,1fr)}}
 @media(max-width:560px){.synop-control-row{display:grid;grid-template-columns:1fr auto}.synop-control-row select{min-width:0}.synop-groups>div{grid-template-columns:72px 1fr}.synop-groups strong{grid-column:1/-1}.synop-raw-panel .panel-title{display:grid;grid-template-columns:1fr auto;gap:8px}.synop-freshness{grid-column:1/-1;width:max-content}}
+
+
+/* Sensors workspace */
+.sensors-heading { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:18px; }
+.sensors-heading h2 { margin:0; }
+.sensors-controls { display:grid; gap:14px; max-width:820px; margin-bottom:26px; }
+.sensor-control { display:grid; grid-template-columns:120px minmax(0,1fr); align-items:center; gap:14px; }
+.sensor-control-label,.sensor-control label { color:#8b949e; font-size:.84rem; font-weight:600; letter-spacing:.01em; }
+.sensor-control-label-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.sensor-control > .sensor-control-label-row { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:5px; }
+.sensor-status { display:inline-flex; align-items:center; min-height:22px; padding:3px 8px; border:1px solid #30363d; border-radius:999px; background:#161b22; line-height:1; }
+.sensor-status.ok { border-color:#238636; color:#3fb950; background:rgba(35,134,54,.12); }
+.sensor-status.warning { border-color:#9e6a03; color:#d29922; background:rgba(158,106,3,.12); }
+.sensor-status.error { border-color:#da3633; color:#f85149; background:rgba(218,54,51,.10); }
+#deviceSelect { width:100%; min-width:0; min-height:48px; border-radius:14px; padding:0 46px 0 16px; border-color:#3d444d; background-color:#161b22; font-size:1rem; font-weight:600; box-shadow:0 8px 24px rgba(1,4,9,.16); }
+#deviceSelect:hover,#deviceSelect:focus { border-color:#58a6ff; outline:none; box-shadow:0 0 0 3px rgba(88,166,255,.13),0 8px 24px rgba(1,4,9,.18); }
+.sensor-mode-selector { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; padding:4px; border:1px solid #30363d; border-radius:16px; background:#0b0f14; box-shadow:inset 0 1px 0 rgba(255,255,255,.025); }
+.sensor-mode-selector button { min-height:42px; padding:9px 16px; border:1px solid transparent; border-radius:12px; background:transparent; color:#8b949e; font-weight:650; transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease; }
+.sensor-mode-selector button:hover { color:#e6edf3; background:#161b22; border-color:#30363d; }
+.sensor-mode-selector button.active { color:#f0f6fc; border-color:#1f6feb; background:linear-gradient(180deg,rgba(31,111,235,.28),rgba(31,111,235,.16)); box-shadow:inset 0 0 0 1px rgba(88,166,255,.18),0 4px 14px rgba(0,0,0,.18); }
+.sensor-mode-view { display:none; }
+.sensor-mode-view.active { display:block; }
+.sensor-summary-cards { margin-top:4px; }
+.sensor-summary-cards article { min-height:118px; }
+.sensor-summary-cards strong { text-transform:none; overflow-wrap:anywhere; }
+.sensor-history-heading { display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:12px; }
+.sensor-history-heading h3 { margin:0; }
+.sensor-history-table-wrap { overflow:auto; border:1px solid #30363d; border-radius:12px; background:#161b22; }
+.sensor-history-table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.sensor-history-table th,.sensor-history-table td { padding:11px 14px; border-bottom:1px solid #30363d; text-align:left; white-space:nowrap; }
+.sensor-history-table th { color:#8b949e; font-size:.76rem; font-weight:650; text-transform:uppercase; letter-spacing:.045em; background:#0d1117; }
+.sensor-history-table tbody tr:last-child td { border-bottom:0; }
+.sensor-history-table tbody tr:hover td { background:#1b222c; }
+@media(max-width:680px){
+  .sensor-control { grid-template-columns:1fr; gap:7px; }
+  .sensor-control > .sensor-control-label-row { flex-direction:row; align-items:center; justify-content:space-between; }
+  .sensors-controls { gap:18px; }
+  .sensor-mode-selector button { padding-inline:10px; }
+}
