@@ -381,6 +381,82 @@ async function aviationWeather(request, env, url) {
   }
 }
 
+const OGIMET_SYNOP_URL = "https://www.ogimet.com/cgi-bin/getsynop";
+const SYNOP_CACHE_SECONDS = 10 * 60;
+
+function validWmoStation(value) {
+  return typeof value === "string" && /^\d{5}$/.test(value);
+}
+
+function compactUtc(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}`;
+}
+
+function parseOgimetSynop(text, station) {
+  let latest = null;
+  for (const line of String(text || "").split(/\r?\n/)) {
+    const columns = line.split(",");
+    if (columns.length < 7 || columns[0].trim() !== station) continue;
+    const raw = columns.slice(6).join(",").trim();
+    if (!raw.startsWith("AAXX ")) continue;
+    const [year, month, day, hour, minute] = columns.slice(1, 6).map((value) => Number(value));
+    const timestamp = Date.UTC(year, month - 1, day, hour, minute);
+    if (!Number.isFinite(timestamp)) continue;
+    const record = {
+      wmo: station,
+      observation_time: new Date(timestamp).toISOString(),
+      raw,
+    };
+    if (!latest || timestamp > Date.parse(latest.observation_time)) latest = record;
+  }
+  return latest;
+}
+
+async function synopWeather(request, env, url) {
+  const station = (url.searchParams.get("station") || "10384").trim();
+  if (!validWmoStation(station)) {
+    return json(request, env, { error: "invalid_station" }, 400);
+  }
+
+  const cache = globalThis.caches?.default || null;
+  const cacheKey = new Request(`https://read-sensor-cache.invalid/synop?station=${station}`);
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) return json(request, env, await cached.json());
+  }
+
+  const end = new Date();
+  const begin = new Date(end.getTime() - 12 * 60 * 60 * 1000);
+  const upstream = new URL(OGIMET_SYNOP_URL);
+  upstream.searchParams.set("block", station.slice(0, 3));
+  upstream.searchParams.set("begin", compactUtc(begin));
+  upstream.searchParams.set("end", compactUtc(end));
+  upstream.searchParams.set("header", "yes");
+  upstream.searchParams.set("lang", "eng");
+
+  try {
+    const response = await fetch(upstream, {
+      headers: { "User-Agent": "read-sensor/1.2 SYNOP dashboard" },
+    });
+    if (!response.ok) throw new Error(`OGIMET HTTP ${response.status}`);
+    const record = parseOgimetSynop(await response.text(), station);
+    const payload = record || { wmo: station, observation_time: null, raw: null };
+    if (cache) {
+      await cache.put(cacheKey, new Response(JSON.stringify(payload), {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, max-age=${SYNOP_CACHE_SECONDS}`,
+        },
+      }));
+    }
+    return json(request, env, payload);
+  } catch (error) {
+    console.error("synop_weather_upstream", error);
+    return json(request, env, { error: "synop_weather_upstream" }, 502);
+  }
+}
+
 function githubDispatchSettings(env) {
   const owner = env.GITHUB_OWNER || "oliwertwister";
   const repository = env.GITHUB_REPOSITORY || "read-sensor";
@@ -465,6 +541,9 @@ export default {
       }
       if (url.pathname === "/api/v1/weather/airports" && request.method === "GET") {
         return await aviationStations(request, env, url);
+      }
+      if (url.pathname === "/api/v1/weather/synop" && request.method === "GET") {
+        return await synopWeather(request, env, url);
       }
 
       return json(request, env, { error: "not_found" }, 404);

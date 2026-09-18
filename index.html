@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=aviation-search-1">
+    <link rel="stylesheet" href="style.css?v=synop-search-1">
   </head>
   <body>
     <header>
@@ -97,17 +97,27 @@
         <div class="synop-heading">
           <div>
             <h2>SYNOP Weather</h2>
-            <p class="muted">Raw WMO FM-12 surface observation + decoded code groups</p>
+            <p class="muted">Raw WMO FM-12 surface observations + decoded code groups</p>
           </div>
-          <div class="synop-controls">
-            <label for="synopStation">Station</label>
-            <div class="synop-control-row">
-              <select id="synopStation" aria-label="SYNOP weather station"></select>
-              <button id="synopRefresh" type="button">Refresh</button>
+          <div class="synop-search-control">
+            <label for="synopSearch">Station</label>
+            <div class="synop-search-box">
+              <input id="synopSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Search WMO station or name…" aria-autocomplete="list" aria-controls="synopResults">
+              <span id="synopSearchStatus" class="synop-search-status" aria-hidden="true"></span>
             </div>
-            <small id="synopGenerated" class="muted">Loading cloud snapshot…</small>
+            <div id="synopResults" class="synop-results" role="listbox" hidden></div>
+            <small id="synopGenerated" class="muted">Loading station catalog…</small>
           </div>
         </div>
+
+        <div class="synop-map-shell">
+          <div id="synopMap" aria-label="SYNOP station map"></div>
+          <div class="synop-map-overlay">
+            <strong id="synopSelected">10384</strong>
+            <span id="synopMapStatus">Loading stations…</span>
+          </div>
+        </div>
+
         <div id="synopDetail">Loading SYNOP…</div>
       </section>
 
@@ -247,6 +257,6 @@
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
     <script src="app.js?v=aviation-search-1"></script>
-    <script src="synop.js?v=synop-2"></script>
+    <script src="synop.js?v=synop-search-1"></script>
   </body>
 </html>

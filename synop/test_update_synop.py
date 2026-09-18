@@ -1,22 +1,23 @@
 import unittest
 
-from update_synop import parse_records
+from update_synop import parse_station_list
 
 
-SAMPLE = """WMO_ID,ANO,MES,DIA,HORA,MINUTO,PARTE
-10384,2026,09,18,15,00,AAXX 18151 10384 25784 12604 10198 20087 30075 40132 52004 333 60007 81/50==
-10384,2026,09,18,15,00,OOXX 10384 21123 00471 26/// /2604 10191==
-99999,2026,09,18,15,00,AAXX 18151 99999 46/// /0000==
+STATIONS = """#ID;wigosIdentifier;Kennung;Stationsname;Geraetetyp;Messnetz;von_Datum;Geog_Breite;Geog_Laenge;Stationshoehe
+433;0-20000-0-10384;10384;Berlin-Tempelhof;MODES H;15;01.04.1918;52.467551;13.401981;47.74
+427;0-20000-0-10385;10385;Berlin Brandenburg;AMDA II;15;01.05.1938;52.380535;13.530429;45.64
 """
 
 
-class ParseRecordsTest(unittest.TestCase):
-    def test_keeps_selected_aaxx_reports_only(self):
-        records = parse_records(SAMPLE)
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0]["wmo"], "10384")
-        self.assertEqual(records[0]["observation_time"], "2026-09-18T15:00:00Z")
-        self.assertTrue(records[0]["raw"].startswith("AAXX 18151"))
+class SynopStationListTest(unittest.TestCase):
+    def test_station_catalog(self):
+        stations = parse_station_list(STATIONS)
+        self.assertEqual({station["wmo"] for station in stations}, {"10384", "10385"})
+        tempelhof = next(station for station in stations if station["wmo"] == "10384")
+        self.assertEqual(tempelhof["name"], "Berlin-Tempelhof")
+        self.assertAlmostEqual(tempelhof["lat"], 52.467551)
+        self.assertAlmostEqual(tempelhof["lon"], 13.401981)
+        self.assertAlmostEqual(tempelhof["elev_m"], 47.74)
 
 
 if __name__ == "__main__":

@@ -3,9 +3,14 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const DEFAULT_WMO = "10384";
-  const SOURCE_URL = "https://www.ogimet.com/getsynop_help.phtml.en";
-  const LICENSE_URL = "https://www.ogimet.com/license.phtml";
+  const RAW_SOURCE_URL = "https://www.ogimet.com/getsynop_help.phtml.en";
+  const RAW_LICENSE_URL = "https://www.ogimet.com/license.phtml";
+  const STATION_SOURCE_URL = "https://opendata.dwd.de/weather/weather_reports/stationlist_synoptic_germany.csv";
   let feed = null;
+  const state = {
+    wmo: DEFAULT_WMO, selected: null, map: null, markers: null, reportWmo: null,
+    searchTimer: null, requestSequence: 0,
+  };
 
   const esc = (value) => String(value ?? "—")
     .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
@@ -201,19 +206,19 @@
   }
 
   function sourceCredit() {
-    return `<p class="muted wx-source">Raw reports via <a href="${SOURCE_URL}" target="_blank" rel="noreferrer">OGIMET getsynop</a> · <a href="${LICENSE_URL}" target="_blank" rel="noreferrer">source and usage notes</a> · WMO FM-12 SYNOP · UTC. Educational decoding only; not for safety-critical use.</p>`;
+    return `<p class="muted wx-source">Station catalog: <a href="${STATION_SOURCE_URL}" target="_blank" rel="noreferrer">DWD Open Data</a> · raw reports via <a href="${RAW_SOURCE_URL}" target="_blank" rel="noreferrer">OGIMET getsynop</a> · <a href="${RAW_LICENSE_URL}" target="_blank" rel="noreferrer">source and usage notes</a> · WMO FM-12 SYNOP · UTC.</p>`;
   }
 
   function renderStation(record) {
     const root = $("synopDetail");
     if (!record?.raw) {
-      root.innerHTML = `<div class="wx-panel"><h3>No recent raw SYNOP</h3><p class="muted">${esc(record?.error || "No report returned.")}</p></div>${sourceCredit()}`;
+      root.innerHTML = `<div class="wx-panel"><h3>No recent raw SYNOP</h3><p class="muted">${esc(record?.error || `No recent AAXX report returned for WMO ${record?.wmo || "—"}.`)}</p></div>${sourceCredit()}`;
       return;
     }
     let d;
     try { d = decode(record.raw); }
     catch (error) {
-      root.innerHTML = `<div class="wx-panel"><h3>Decode failed</h3><pre class="synop-raw">${esc(record.raw)}</pre><p class="muted">${esc(error.message)}</p></div>`;
+      root.innerHTML = `<div class="wx-panel"><h3>Decode failed</h3><pre class="synop-raw">${esc(record.raw)}</pre><p class="muted">${esc(error.message)}</p></div>${sourceCredit()}`;
       return;
     }
 
@@ -273,51 +278,193 @@
     });
   }
 
-  function renderSelected() {
-    const wmo = $("synopStation")?.value || DEFAULT_WMO;
-    renderStation(feed?.stations?.find((record) => record.wmo === wmo));
+  function stationLabel(station) {
+    return `${station.name} · ${station.wmo}`;
   }
 
-  async function loadSynop() {
+  function stationScore(station, query) {
+    const q = query.toLocaleLowerCase();
+    const wmo = station.wmo.toLocaleLowerCase();
+    const name = station.name.toLocaleLowerCase();
+    if (wmo === q) return 100;
+    if (name === q) return 95;
+    if (wmo.startsWith(q)) return 85;
+    if (name.startsWith(q)) return 75;
+    if (name.includes(q)) return 55;
+    if (wmo.includes(q)) return 45;
+    return 0;
+  }
+
+  function renderSearchResults(stations) {
+    const root = $("synopResults");
+    root.replaceChildren();
+    if (!stations.length) {
+      const empty = document.createElement("div");
+      empty.className = "synop-result-empty";
+      empty.textContent = "No matching stations.";
+      root.append(empty);
+      root.hidden = false;
+      return;
+    }
+    for (const station of stations) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "synop-result";
+      button.setAttribute("role", "option");
+      const main = document.createElement("strong");
+      main.textContent = stationLabel(station);
+      const sub = document.createElement("span");
+      sub.textContent = `${station.lat.toFixed(3)}°, ${station.lon.toFixed(3)}° · ${Math.round(station.elev_m)} m`;
+      button.append(main, sub);
+      button.addEventListener("click", () => selectStation(station));
+      root.append(button);
+    }
+    root.hidden = false;
+  }
+
+  function searchStations(query) {
+    const q = query.trim();
+    const root = $("synopResults");
+    if (!feed?.stations || q.length < 2) {
+      root.hidden = true;
+      root.replaceChildren();
+      return;
+    }
+    const matches = feed.stations
+      .map((station) => ({ station, score: stationScore(station, q) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score || a.station.name.localeCompare(b.station.name))
+      .slice(0, 24)
+      .map(({ station }) => station);
+    renderSearchResults(matches);
+  }
+
+  async function loadStationReport(station) {
+    const sequence = ++state.requestSequence;
+    const root = $("synopDetail");
+    root.innerHTML = `<div class="wx-panel"><p class="muted">Loading WMO ${esc(station.wmo)}…</p></div>`;
+    $("synopSearchStatus").textContent = "…";
+    try {
+      const base = window.READ_SENSOR_CONFIG?.apiBase;
+      if (!base) throw new Error("Telemetry API is not configured");
+      const url = new URL("/api/v1/weather/synop", `${base}/`);
+      url.searchParams.set("station", station.wmo);
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const report = await response.json();
+      if (sequence !== state.requestSequence) return;
+      $("synopSearchStatus").textContent = "";
+      state.reportWmo = station.wmo;
+      renderStation({ ...station, ...report });
+    } catch (error) {
+      if (sequence !== state.requestSequence) return;
+      console.error("synop_report_failed", error);
+      $("synopSearchStatus").textContent = "!";
+      renderStation({ ...station, raw: null, error: "Raw SYNOP retrieval unavailable." });
+    }
+  }
+
+  function selectStation(station, { focusMap = true } = {}) {
+    state.wmo = station.wmo;
+    state.selected = station;
+    $("synopSearch").value = stationLabel(station);
+    $("synopResults").hidden = true;
+    $("synopSelected").textContent = station.wmo;
+    if (focusMap && state.map) {
+      state.map.setView([station.lat, station.lon], Math.max(state.map.getZoom(), 8));
+    }
+    loadStationReport(station);
+  }
+
+  function renderMapStations() {
+    if (!state.map || !state.markers || !feed?.stations) return;
+    state.markers.clearLayers();
+    for (const station of feed.stations) {
+      const marker = L.circleMarker([station.lat, station.lon], {
+        radius: 4.5, weight: 1.4, fillOpacity: 0.72,
+      });
+      marker.bindTooltip(stationLabel(station), { direction: "top" });
+      marker.on("click", () => selectStation(station, { focusMap: false }));
+      marker.addTo(state.markers);
+    }
+    $("synopMapStatus").textContent = `${feed.stations.length} stations`;
+  }
+
+  function initMap() {
+    if (state.map) return;
+    state.map = L.map("synopMap", { zoomControl: true, fadeAnimation: false }).setView([51.0, 10.4], 6);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap contributors",
+    }).addTo(state.map);
+    state.markers = L.layerGroup().addTo(state.map);
+    L.control.scale({ imperial: false, position: "bottomleft" }).addTo(state.map);
+    renderMapStations();
+    if (state.selected) state.map.setView([state.selected.lat, state.selected.lon], 7);
+  }
+
+  async function loadCatalog() {
     const root = $("synopDetail");
     if (!root) return;
     try {
       const response = await fetch(`synop/latest.json?t=${Date.now()}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       feed = await response.json();
-      const select = $("synopStation");
       const stations = Array.isArray(feed.stations) ? feed.stations : [];
-      const previous = select.dataset.loaded === "true" ? select.value : "";
-      select.replaceChildren(...stations.map((record) => {
-        const option = document.createElement("option");
-        option.value = record.wmo;
-        option.textContent = `${record.name} · ${record.wmo}`;
-        return option;
-      }));
-      if ([...select.options].some((option) => option.value === previous)) select.value = previous;
-      else {
-        const newest = stations.filter((record) => record.raw && record.observation_time)
-          .sort((a, b) => String(b.observation_time).localeCompare(String(a.observation_time)))[0];
-        if (newest) select.value = newest.wmo;
-        else if ([...select.options].some((option) => option.value === DEFAULT_WMO)) select.value = DEFAULT_WMO;
+      $("synopGenerated").textContent = feed.generated_at
+        ? `${stations.length} stations · catalog refreshed ${utc(feed.generated_at)}`
+        : `${stations.length} stations`;
+      renderMapStations();
+
+      let selected = stations.find((station) => station.wmo === state.wmo);
+      if (!selected) selected = stations.find((station) => station.wmo === DEFAULT_WMO) || stations[0];
+      if (selected) {
+        state.selected = selected;
+        state.wmo = selected.wmo;
+        $("synopSearch").value = stationLabel(selected);
+        $("synopSelected").textContent = selected.wmo;
       }
-      select.dataset.loaded = "true";
-      const warning = Array.isArray(feed.errors) && feed.errors.length ? " · source refresh warning" : "";
-      $("synopGenerated").textContent = feed.generated_at ? `Feed refreshed ${utc(feed.generated_at)}${warning}` : "Feed time unavailable";
-      renderSelected();
     } catch (error) {
-      console.error("synop_failed", error);
+      console.error("synop_catalog_failed", error);
       root.innerHTML = `<div class="wx-panel"><h3>SYNOP unavailable</h3><p class="muted">${esc(error.message)}</p></div>`;
+      $("synopGenerated").textContent = "Station catalog unavailable";
     }
   }
 
+  function initSearch() {
+    const input = $("synopSearch");
+    input.value = DEFAULT_WMO;
+    input.addEventListener("input", () => {
+      clearTimeout(state.searchTimer);
+      state.searchTimer = setTimeout(() => searchStations(input.value), 180);
+    });
+    input.addEventListener("focus", () => {
+      if (input.value.trim().length >= 2) searchStations(input.value);
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") $("synopResults").hidden = true;
+      if (event.key === "Enter") {
+        const first = $("synopResults").querySelector(".synop-result");
+        if (first) first.click();
+      }
+    });
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".synop-search-control")) $("synopResults").hidden = true;
+    });
+  }
+
   function init() {
-    const select = $("synopStation");
-    if (!select) return;
-    select.addEventListener("change", renderSelected);
-    $("synopRefresh")?.addEventListener("click", loadSynop);
-    loadSynop();
-    setInterval(loadSynop, 5 * 60 * 1000);
+    if (!$("synopSearch")) return;
+    initSearch();
+    document.querySelector('[data-tab="synop"]')?.addEventListener("click", () => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!state.map) initMap();
+        else state.map.invalidateSize({ pan: false, animate: false });
+        if (state.selected && state.reportWmo !== state.selected.wmo) loadStationReport(state.selected);
+      }));
+    });
+    loadCatalog();
+    setInterval(loadCatalog, 15 * 60 * 1000);
   }
 
   if (typeof module !== "undefined" && module.exports) module.exports = { decode, observationAge };
