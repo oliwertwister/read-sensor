@@ -68,17 +68,27 @@ const CPU_TIME_ZONE = "Europe/Berlin";
 const CPU_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CPU_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const CPU_GAP_THRESHOLD_MS = 7.5 * 60 * 1000;
-const CPU_TICK_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 function formatCpuTick(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
-  const datePart = new Intl.DateTimeFormat("en-GB", {
-    timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short",
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: CPU_TIME_ZONE, hour: "2-digit", hourCycle: "h23",
   }).format(date);
-  const timePart = new Intl.DateTimeFormat("en-GB", {
-    timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(date);
-  return [datePart, timePart];
+}
+
+function cpuAxisTickValues(start, end) {
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  });
+  const values = [];
+  const firstWholeHour = Math.ceil(start / (60 * 60 * 1000)) * 60 * 60 * 1000;
+  for (let value = firstWholeHour; value <= end; value += 60 * 60 * 1000) {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(new Date(value)).map((part) => [part.type, part.value]),
+    );
+    if (Number(parts.minute) === 0 && Number(parts.hour) % 3 === 0) values.push(value);
+  }
+  return values;
 }
 
 function formatCpuTimestamp(date) {
@@ -255,12 +265,13 @@ function renderReadings() {
           type: "linear",
           min: timeline.start,
           max: timeline.end,
-          title: { display: true, text: "Time (Europe/Berlin) · 3-hour intervals" },
+          title: { display: true, text: "Time (Europe/Berlin) · 3-hour marks" },
+          afterBuildTicks(scale) {
+            scale.ticks = cpuAxisTickValues(scale.min, scale.max).map((value) => ({ value }));
+          },
           ticks: {
-            stepSize: CPU_TICK_INTERVAL_MS,
             maxRotation: 0,
-            autoSkip: true,
-            autoSkipPadding: 14,
+            autoSkip: false,
             callback(value) {
               return formatCpuTick(new Date(value));
             },
