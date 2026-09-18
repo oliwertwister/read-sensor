@@ -890,6 +890,7 @@ a { color: #58a6ff; }
 .satellite-stats > div { padding:9px 11px; border:1px solid #30363d; border-radius:8px; background:#161b22; }
 .satellite-stats small { margin:0 0 3px; font-size:.72rem; }
 .satellite-stats strong { display:block; font-size:.88rem; font-weight:600; }
+.satellite-stat-zone { display:block; margin-top:3px; color:#8b949e; font-size:.72rem; }
 .satellite-figure { margin:0; border:1px solid #30363d; border-radius:12px; overflow:hidden; background:#0d1117; }
 .satellite-figure img { display:block; width:100%; min-height:320px; object-fit:contain; background:#05080c; }
 .satellite-figure figcaption { display:flex; justify-content:space-between; gap:16px; padding:11px 14px; background:#161b22; }

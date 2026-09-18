@@ -438,14 +438,25 @@ function initIconCharts() {
 let satelliteMeta = null;
 let satelliteProduct = "geocolour";
 
-function satelliteTime(value) {
-  if (!value) return "—";
+function satelliteTimes(value) {
+  if (!value) return { local: "—", utc: "—" };
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
+  if (Number.isNaN(date.getTime())) return { local: "—", utc: "—" };
+  const local = new Intl.DateTimeFormat("en-GB", {
+    timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short",
+  }).format(date);
+  const utc = new Intl.DateTimeFormat("en-GB", {
     timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: false,
   }).format(date) + " UTC";
+  return { local, utc };
+}
+
+function renderSatelliteTime(localId, utcId, value) {
+  const times = satelliteTimes(value);
+  $(localId).textContent = times.local;
+  $(utcId).textContent = times.utc === "—" ? "—" : `(${times.utc})`;
 }
 
 function updateSatelliteFreshness() {
@@ -481,8 +492,8 @@ function renderSatellite() {
   $("satelliteImage").src = `satellite/${product.file}?v=${version}`;
   $("satelliteTitle").textContent = `${satelliteMeta.platform} · ${satelliteMeta.instrument} · ${product.title}`;
   $("satelliteCaption").textContent = product.subtitle;
-  $("satObserved").textContent = satelliteTime(product.observed_at);
-  $("satGenerated").textContent = satelliteTime(satelliteMeta.generated_at);
+  renderSatelliteTime("satObserved", "satObservedUtc", product.observed_at);
+  renderSatelliteTime("satGenerated", "satGeneratedUtc", satelliteMeta.generated_at);
   $("satCadence").textContent = `~${satelliteMeta.nominal_cadence_minutes || 10} min`;
   $("satProcessing").textContent = satelliteMeta.boundary_overlay || "Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent";
   updateSatelliteFreshness();

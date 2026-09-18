@@ -104,8 +104,8 @@
             <button type="button" data-sat-product="ir105">IR 10.5 µm</button>
           </div>
           <div class="satellite-stats">
-            <div><small>Observed</small><strong id="satObserved">—</strong></div>
-            <div><small>Page updated</small><strong id="satGenerated">—</strong></div>
+            <div><small>Observed</small><strong id="satObserved">—</strong><span id="satObservedUtc" class="satellite-stat-zone">—</span></div>
+            <div><small>Page updated</small><strong id="satGenerated">—</strong><span id="satGeneratedUtc" class="satellite-stat-zone">—</span></div>
             <div><small>Cadence</small><strong id="satCadence">—</strong></div>
             <div><small>Pipeline</small><strong>Cloud</strong></div>
           </div>
@@ -179,7 +179,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=chart-gaps-1"></script>
+    <script src="app.js?v=satellite-timezones-1"></script>
     <script src="synop.js?v=synop-2"></script>
   </body>
 </html>
