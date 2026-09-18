@@ -19,7 +19,7 @@ latitude/longitude grid plus Natural Earth 1:50m Admin-0 country boundaries
 fitted to the same CRS:84 extent and exports WebP. This is country-level
 administrative geometry, not merely a coastline layer. Observation time is
 carried separately in `latest.json` and displayed by the dashboard.
-No Mac, phone, browser session, API key, or inbound connection is required.
+No sensor computer, phone, browser session, API key, or inbound connection is required.
 Country geometry is fetched by the scheduled renderer from Natural Earth.
 
 ## Raw FCI / Satpy upgrade
