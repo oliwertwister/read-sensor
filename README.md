@@ -8,7 +8,8 @@ A zero-cost prototype for publishing outbound-only device telemetry to a static 
 - **CPU Temperature** — D1-backed temperature history with automatic refresh.
 - **Berlin Weather** — general Berlin weather from Open-Meteo.
 - **BER Aviation Weather** — EDDB METAR/TAF plus DWD ICON forecast charts.
-- **Satellite** — autonomous MTG-I/FCI Europe imagery with WGS84 grid, scheduled four times per hour by GitHub Actions.
+- **SYNOP Weather** — raw FM-12 AAXX reports with in-browser decoding for selected Berlin/Potsdam WMO stations.
+- **Satellite** — autonomous MTG-I/FCI Europe imagery with WGS84 grid, dispatched four times per hour by Cloudflare Cron.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid, Berlin and BER markers, and local geometry loading.
 - **Sensor / System** — latest telemetry record and architecture details.
 
@@ -27,3 +28,5 @@ Vendored parser notices are in `vendor/THIRD_PARTY_NOTICES.md`.
 ## Autonomous satellite path
 
 Cloudflare Cron dispatches the satellite renderer four times per hour. The renderer runs on GitHub-hosted Linux, reads the latest MTG-I/FCI imagery from EUMETSAT EUMETView, overlays a coordinate grid and timestamp, then deploys WebP images with the site. It is independent of the sensor Mac and browser clients. See `satellite/README.md`.
+
+The same cloud-only deployment fetches a bounded 36-hour window of raw Berlin/Potsdam AAXX reports from OGIMET and publishes a small static JSON snapshot. The browser decodes the standard FM-12 Section 1 fields for educational display. SYNOP fetching and decoding do not run on the sensor Mac, require no secret, and open no inbound service.

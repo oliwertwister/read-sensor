@@ -15,3 +15,4 @@ collector.env
 worker/.wrangler/
 
 satellite/output/
+synop/output/

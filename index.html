@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=satellite-3">
+    <link rel="stylesheet" href="style.css?v=synop-1">
   </head>
   <body>
     <header>
@@ -28,6 +28,7 @@
       <button type="button" data-tab="cpu">CPU Temperature</button>
       <button type="button" data-tab="weather">Berlin Weather</button>
       <button type="button" data-tab="aviation">BER Aviation Weather</button>
+      <button type="button" data-tab="synop">SYNOP</button>
       <button type="button" data-tab="satellite">Satellite</button>
       <button type="button" data-tab="map">Berlin Map</button>
       <button type="button" data-tab="system">Sensor / System</button>
@@ -81,6 +82,24 @@
           </div>
           <figure class="model-figure"><img id="iconChart" alt="DWD ICON-EU numerical weather forecast chart"><figcaption id="iconCaption" class="muted"></figcaption></figure>
         </section>
+      </section>
+
+      <section id="synop" class="tab">
+        <div class="synop-heading">
+          <div>
+            <h2>SYNOP Weather</h2>
+            <p class="muted">Raw WMO FM-12 surface observation + decoded code groups</p>
+          </div>
+          <div class="synop-controls">
+            <label for="synopStation">Station</label>
+            <div class="synop-control-row">
+              <select id="synopStation" aria-label="SYNOP weather station"></select>
+              <button id="synopRefresh" type="button">Refresh</button>
+            </div>
+            <small id="synopGenerated" class="muted">Loading cloud snapshot…</small>
+          </div>
+        </div>
+        <div id="synopDetail">Loading SYNOP…</div>
       </section>
 
       <section id="satellite" class="tab">
@@ -159,5 +178,6 @@
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
     <script src="app.js?v=chart-gaps-1"></script>
+    <script src="synop.js?v=synop-2"></script>
   </body>
 </html>

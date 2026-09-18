@@ -907,3 +907,23 @@ a { color: #58a6ff; }
 .satellite-about-grid small { margin-bottom:4px; }
 .satellite-about-grid strong { font-size:.78rem; line-height:1.35; }
 @media (max-width:700px) { .satellite-about-grid { grid-template-columns:1fr 1fr; } }
+
+/* SYNOP raw + decoded weather */
+.synop-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:16px}
+.synop-heading h2,.synop-heading p{margin:0}.synop-heading p{margin-top:5px}
+.synop-controls{display:grid;gap:5px;min-width:min(360px,100%)}
+.synop-controls label{color:#8b949e;font-size:.78rem}
+.synop-control-row{display:flex;gap:8px}.synop-control-row select{flex:1;min-width:230px}
+.synop-control-row button,.synop-raw-panel button{padding:8px 12px}
+.synop-raw-panel .panel-title{align-items:flex-start}.synop-raw-panel .panel-title p{margin:5px 0 0;flex:1}
+.synop-freshness{padding:5px 9px;border:1px solid #238636;border-radius:999px;color:#3fb950;font-size:.78rem;white-space:nowrap}
+.synop-freshness.stale{border-color:#9e6a03;color:#d29922;background:#221b0d}.synop-freshness.unavailable{border-color:#da3633;color:#f85149}
+.synop-raw{margin:16px 0 0;min-height:0;padding:16px;border:1px solid #30363d;border-radius:8px;background:#0d1117;color:#f0f6fc;font:600 .92rem/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.synop-metrics{grid-template-columns:repeat(5,minmax(0,1fr))}.synop-details{margin-top:18px}
+.synop-groups{display:grid;gap:0;margin-top:12px;border-top:1px solid #30363d}
+.synop-groups>div{display:grid;grid-template-columns:90px 110px minmax(0,1fr);gap:14px;align-items:start;padding:10px 0;border-bottom:1px solid #30363d}
+.synop-groups code{color:#79c0ff;font-size:.9rem;font-weight:700}
+.synop-groups span{color:#8b949e;font:.82rem/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.synop-groups strong{font-size:.9rem;font-weight:500}
+@media(max-width:900px){.synop-heading{align-items:stretch;flex-direction:column}.synop-controls{width:100%}.synop-metrics{grid-template-columns:repeat(2,1fr)}.synop-groups>div{grid-template-columns:80px 100px minmax(0,1fr)}}
+@media(max-width:560px){.synop-control-row{display:grid;grid-template-columns:1fr auto}.synop-control-row select{min-width:0}.synop-groups>div{grid-template-columns:72px 1fr}.synop-groups strong{grid-column:1/-1}.synop-raw-panel .panel-title{display:grid;grid-template-columns:1fr auto;gap:8px}.synop-freshness{grid-column:1/-1;width:max-content}}

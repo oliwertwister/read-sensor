@@ -46,11 +46,18 @@ jobs:
           node --check config.js
           node --check geometry-loader.js
           node --check geometry-ui.js
+          node --check synop.js
+          node synop/test_decode.js
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+
+      - name: Fetch latest SYNOP reports
+        run: |
+          python synop/test_update_synop.py
+          python synop/update_synop.py --output synop/output/latest.json
 
       - name: Render latest Meteosat products
         run: |
@@ -60,10 +67,12 @@ jobs:
       - name: Stage public files
         run: |
           mkdir _site
-          cp index.html app.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
+          cp index.html app.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
           cp -R vendor _site/
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/
+          mkdir -p _site/synop
+          cp -R synop/output/. _site/synop/
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
