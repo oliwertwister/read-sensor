@@ -177,7 +177,7 @@ const cpuDowntimePlugin = {
     const { ctx, chartArea, scales } = chart;
     if (!chartArea || !scales.x || !options?.gaps?.length) return;
     ctx.save();
-    ctx.fillStyle = "rgba(248, 81, 73, 0.14)";
+    ctx.fillStyle = "rgba(248, 81, 73, 0.09)";
     for (const gap of options.gaps) {
       const left = Math.max(chartArea.left, scales.x.getPixelForValue(gap.from));
       const right = Math.min(chartArea.right, scales.x.getPixelForValue(gap.to));
@@ -189,7 +189,7 @@ const cpuDowntimePlugin = {
     const { ctx, chartArea, scales } = chart;
     if (!chartArea || !scales.x || !options?.gaps?.length) return;
     ctx.save();
-    ctx.fillStyle = "#ff7b72";
+    ctx.fillStyle = "#cf222e";
     ctx.font = "600 11px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -233,13 +233,19 @@ function renderReadings() {
         {
           label: "CPU °C",
           data: timeline.points,
-          borderColor: "#58a6ff",
-          backgroundColor: "rgba(88, 166, 255, 0.14)",
+          borderColor: "#0969da",
+          backgroundColor: "rgba(9, 105, 218, 0.07)",
+          borderWidth: 1.35,
+          borderCapStyle: "round",
+          borderJoinStyle: "round",
           fill: true,
           parsing: false,
           spanGaps: false,
-          tension: 0.25,
-          pointRadius: 1.5,
+          tension: 0.18,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          pointHitRadius: 8,
+          pointHoverBorderWidth: 1.5,
         },
       ],
     },
@@ -251,7 +257,13 @@ function renderReadings() {
       interaction: { intersect: false, mode: "index" },
       plugins: {
         cpuDowntime: { gaps: timeline.gaps },
+        legend: {
+          labels: { color: "#24292f", boxWidth: 24, boxHeight: 2 },
+        },
         tooltip: {
+          backgroundColor: "rgba(36, 41, 47, 0.94)",
+          displayColors: false,
+          padding: 10,
           callbacks: {
             title(items) {
               if (!items.length) return "";
@@ -265,11 +277,14 @@ function renderReadings() {
           type: "linear",
           min: timeline.start,
           max: timeline.end,
-          title: { display: true, text: "Time (Europe/Berlin) · 3-hour marks" },
+          border: { color: "#d0d7de" },
+          grid: { color: "rgba(27, 31, 36, 0.09)" },
+          title: { display: true, text: "Time (Europe/Berlin) · 3-hour marks", color: "#57606a" },
           afterBuildTicks(scale) {
             scale.ticks = cpuAxisTickValues(scale.min, scale.max).map((value) => ({ value }));
           },
           ticks: {
+            color: "#57606a",
             maxRotation: 0,
             autoSkip: false,
             callback(value) {
@@ -277,7 +292,12 @@ function renderReadings() {
             },
           },
         },
-        y: { title: { display: true, text: "°C" } },
+        y: {
+          border: { color: "#d0d7de" },
+          grid: { color: "rgba(27, 31, 36, 0.09)" },
+          ticks: { color: "#57606a" },
+          title: { display: true, text: "°C", color: "#57606a" },
+        },
       },
     },
   });
