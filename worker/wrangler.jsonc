@@ -4,9 +4,16 @@
   "compatibility_date": "2026-09-15",
   "workers_dev": true,
   "preview_urls": false,
+  "triggers": {
+    "crons": ["7,22,37,52 * * * *"]
+  },
   "vars": {
     "CORS_ORIGINS": "https://oliwertwister.github.io",
-    "RETENTION_DAYS": "30"
+    "RETENTION_DAYS": "30",
+    "GITHUB_OWNER": "oliwertwister",
+    "GITHUB_REPOSITORY": "read-sensor",
+    "GITHUB_WORKFLOW": "pages.yml",
+    "GITHUB_REF": "main"
   },
   "d1_databases": [{
     "binding": "DB",

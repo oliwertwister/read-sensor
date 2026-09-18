@@ -1,11 +1,13 @@
 # Satellite pipeline
 
 The dashboard satellite tab is generated independently of the sensor computer.
-GitHub Actions schedules `render_satellite.py` four times per hour, away from
-common quarter-hour congestion, and deploys the result with the static GitHub
-Pages site. Scheduled Actions are best-effort, so the dashboard displays both
-the source observation time and the page-generation time and marks old imagery
-as stale.
+Cloudflare Cron dispatches `render_satellite.py` through the GitHub Actions
+`workflow_dispatch` API four times per hour. GitHub-hosted Linux renders and
+deploys the result with the static GitHub Pages site. The Cloudflare Worker
+stores a fine-grained GitHub token as an encrypted secret; it is limited to
+Actions write access on this repository and is never exposed to browsers or
+sensor devices. The dashboard displays both the source observation time and
+the page-generation time and marks old imagery as stale.
 
 Current products come from EUMETSAT EUMETView WMS and are based on MTG-I FCI:
 

@@ -26,4 +26,4 @@ Vendored parser notices are in `vendor/THIRD_PARTY_NOTICES.md`.
 
 ## Autonomous satellite path
 
-The satellite renderer runs on GitHub-hosted Linux, reads the latest MTG-I/FCI imagery from EUMETSAT EUMETView, overlays a coordinate grid and timestamp, then deploys WebP images with the site. It is independent of the sensor Mac and browser clients. See `satellite/README.md`.
+Cloudflare Cron dispatches the satellite renderer four times per hour. The renderer runs on GitHub-hosted Linux, reads the latest MTG-I/FCI imagery from EUMETSAT EUMETView, overlays a coordinate grid and timestamp, then deploys WebP images with the site. It is independent of the sensor Mac and browser clients. See `satellite/README.md`.

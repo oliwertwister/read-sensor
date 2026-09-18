@@ -8,6 +8,7 @@ import worker from "../src/index.js";
 const schema = readFileSync(new URL("../schema.sql", import.meta.url), "utf8");
 const TOKEN = "a".repeat(64);
 const DEVICE = "sensor-node-01";
+const GITHUB_TOKEN = `github_pat_${"b".repeat(64)}`;
 
 class D1Statement {
   constructor(database, sql, values = []) {
@@ -211,4 +212,53 @@ test("bad JSON, timestamps, sizes, and fractional limits fail cleanly", async ()
 
   const limit = await worker.fetch(request("/api/v1/history?limit=1.5"), env);
   assert.equal(limit.status, 400);
+});
+
+test("scheduled events dispatch a satellite-only Pages workflow", async () => {
+  const originalFetch = globalThis.fetch;
+  let dispatched;
+  globalThis.fetch = async (url, options) => {
+    dispatched = { url, options };
+    return new Response(JSON.stringify({ workflow_run_id: 123 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    await worker.scheduled(
+      { cron: "7,22,37,52 * * * *", scheduledTime: Date.now() },
+      {
+        ...env,
+        GITHUB_ACTIONS_TOKEN: GITHUB_TOKEN,
+        GITHUB_OWNER: "oliwertwister",
+        GITHUB_REPOSITORY: "read-sensor",
+        GITHUB_WORKFLOW: "pages.yml",
+        GITHUB_REF: "main",
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(
+    dispatched.url,
+    "https://api.github.com/repos/oliwertwister/read-sensor/actions/workflows/pages.yml/dispatches",
+  );
+  assert.equal(dispatched.options.method, "POST");
+  assert.equal(dispatched.options.headers.authorization, `Bearer ${GITHUB_TOKEN}`);
+  assert.equal(dispatched.options.headers["x-github-api-version"], "2026-03-10");
+  assert.deepEqual(JSON.parse(dispatched.options.body), {
+    ref: "main",
+    inputs: { satellite_only: true },
+  });
+});
+
+test("scheduled events fail closed without a GitHub token", async () => {
+  await assert.rejects(
+    worker.scheduled(
+      { cron: "7,22,37,52 * * * *", scheduledTime: Date.now() },
+      env,
+    ),
+    /GITHUB_ACTIONS_TOKEN is not configured/,
+  );
 });

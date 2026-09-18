@@ -4,6 +4,7 @@ const DEFAULT_HISTORY_LIMIT = 288;
 const MAX_HISTORY_LIMIT = 2016;
 const MAX_BODY_BYTES = 4096;
 const DEFAULT_RETENTION_DAYS = 30;
+const GITHUB_API_VERSION = "2026-03-10";
 
 const validName = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value);
@@ -244,6 +245,56 @@ async function aviationWeather(request, env) {
   return json(request, env, { station: "EDDB", airport: "Berlin Brandenburg Airport (BER)", metar: metars[0] || null, taf: tafs[0] || null });
 }
 
+function githubDispatchSettings(env) {
+  const owner = env.GITHUB_OWNER || "oliwertwister";
+  const repository = env.GITHUB_REPOSITORY || "read-sensor";
+  const workflow = env.GITHUB_WORKFLOW || "pages.yml";
+  const reference = env.GITHUB_REF || "main";
+  const safeComponent = /^[A-Za-z0-9_.-]{1,100}$/;
+  if (
+    !safeComponent.test(owner) ||
+    !safeComponent.test(repository) ||
+    !safeComponent.test(workflow) ||
+    !safeComponent.test(reference)
+  ) {
+    throw new Error("invalid GitHub dispatch configuration");
+  }
+  if (typeof env.GITHUB_ACTIONS_TOKEN !== "string" || env.GITHUB_ACTIONS_TOKEN.length < 20) {
+    throw new Error("GITHUB_ACTIONS_TOKEN is not configured");
+  }
+  return { owner, repository, workflow, reference };
+}
+
+async function dispatchSatelliteRefresh(env) {
+  const { owner, repository, workflow, reference } = githubDispatchSettings(env);
+  const endpoint = [
+    "https://api.github.com/repos",
+    encodeURIComponent(owner),
+    encodeURIComponent(repository),
+    "actions/workflows",
+    encodeURIComponent(workflow),
+    "dispatches",
+  ].join("/");
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      accept: "application/vnd.github+json",
+      authorization: `Bearer ${env.GITHUB_ACTIONS_TOKEN}`,
+      "content-type": "application/json",
+      "user-agent": "read-sensor-cloudflare-scheduler/1.0",
+      "x-github-api-version": GITHUB_API_VERSION,
+    },
+    body: JSON.stringify({
+      ref: reference,
+      inputs: { satellite_only: true },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub workflow dispatch failed with HTTP ${response.status}`);
+  }
+  return { status: response.status };
+}
+
 export default {
   async fetch(request, env) {
     try {
@@ -282,5 +333,14 @@ export default {
       console.error("request_failed", error);
       return json(request, env, { error: "internal_error" }, 500);
     }
+  },
+  async scheduled(controller, env) {
+    const result = await dispatchSatelliteRefresh(env);
+    console.log(JSON.stringify({
+      event: "satellite_refresh_dispatched",
+      cron: controller.cron,
+      scheduled_time: new Date(controller.scheduledTime).toISOString(),
+      github_status: result.status,
+    }));
   },
 };
