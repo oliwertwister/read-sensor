@@ -309,24 +309,40 @@ function renderSensorHistory(timeline) {
   }
 }
 
-function csvCell(value) {
+function csvCell(value, delimiter = ";") {
   const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  const escaped = text.replaceAll('"', '""');
+  return text.includes(delimiter) || /["\r\n]/.test(text) ? `"${escaped}"` : text;
+}
+
+function csvDecimal(value) {
+  return Number(value).toFixed(6).replace(".", ",");
 }
 
 function downloadSensorCsv() {
   const rows = state.sensorTableRows;
   if (!rows.length) return;
   const aggregation = state.sensorAverageMinutes ? `${state.sensorAverageMinutes}min_average` : "raw";
+  const delimiter = ";";
   const header = ["timestamp", "device", "metric", "window", "aggregation_minutes", "value", "unit", "samples"];
-  const lines = [header.join(",")];
+  const lines = [header.map((value) => csvCell(value, delimiter)).join(delimiter)];
   for (const row of rows) {
     lines.push([
-      new Date(row.time).toISOString(), state.device, state.metric, state.sensorWindowKey,
-      state.sensorAverageMinutes || 0, Number(row.value).toFixed(6), row.unit || "", row.samples,
-    ].map(csvCell).join(","));
+      new Date(row.time).toISOString(),
+      state.device,
+      state.metric,
+      state.sensorWindowKey,
+      state.sensorAverageMinutes || 0,
+      csvDecimal(row.value),
+      row.unit || "",
+      row.samples,
+    ].map((value) => csvCell(value, delimiter)).join(delimiter));
   }
-  const blob = new Blob([`${lines.join("\n")}\n`], { type: "text/csv;charset=utf-8" });
+  // UTF-8 BOM makes Excel on macOS/Windows decode symbols such as °C correctly.
+  // Semicolon fields + decimal comma match the spreadsheet conventions used by
+  // German/European locales when a CSV is opened directly.
+  const csv = `\uFEFF${lines.join("\r\n")}\r\n`;
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
