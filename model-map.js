@@ -460,7 +460,7 @@
       }
       next = 0;
     }
-    await prefetchForecastStep(next);
+    void prefetchForecastStep(next);
     await switchForecastTime(next, { fromAnimation: true });
     if (!iconModelState.animationPlaying || serial !== iconModelState.animationSerial) return;
     const following = (next + 1) % steps.length;
@@ -527,12 +527,11 @@
       updateAnimationControls();
       populatePressureControl();
       buildLayerPanel();
-      for (const def of nextMeta.layers) {
+      const enabledLayers = nextMeta.layers.filter((def) => {
         const row = iconModelState.rows.get(def.id);
-        if (row?.querySelector('input[type="checkbox"]')?.checked) {
-          await setLayerEnabled(def, true);
-        }
-      }
+        return Boolean(row?.querySelector('input[type="checkbox"]')?.checked);
+      });
+      await Promise.all(enabledLayers.map((def) => setLayerEnabled(def, true)));
       setMapStatus("Interactive fields ready", "ok");
     } catch (error) {
       console.error("icon_time_switch_failed", error);
@@ -735,7 +734,7 @@
         buildLayerPanel();
         const map = makeMap();
         const defaults = rootMeta.interactive.layers.filter((def) => def.default);
-        for (const def of defaults) await setLayerEnabled(def, true);
+        await Promise.all(defaults.map((def) => setLayerEnabled(def, true)));
 
         iconEl("iconMapReset").addEventListener("click", () => {
           map.fitBounds(iconModelState.meta.bounds, { padding: [8, 8] });
