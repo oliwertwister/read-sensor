@@ -76,11 +76,16 @@ jobs:
       - name: Render quantitative ICON-EU static and interactive products
         run: python model/render_icon_products.py --output model/output --background satellite/output/geocolour.webp
 
-      - name: Publish Zarr cube to R2 when configured
+      - name: Publish Zarr cube to R2 with GitHub OIDC
         env:
-          MODEL_CUBE_UPLOAD_URL: ${{ secrets.MODEL_CUBE_UPLOAD_URL }}
-          MODEL_UPLOAD_TOKEN: ${{ secrets.MODEL_UPLOAD_TOKEN }}
-        run: python model/upload_zarr_cube.py
+          MODEL_CUBE_UPLOAD_URL: https://read-sensor-api.read-sensor.workers.dev/api/v1/model-cube-upload
+        run: |
+          OIDC_JSON=$(curl --fail --silent --show-error \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=read-sensor-r2-upload")
+          MODEL_UPLOAD_TOKEN=$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<< "$OIDC_JSON")
+          export MODEL_UPLOAD_TOKEN
+          python model/upload_zarr_cube.py
 
       - name: Stage public files
         run: |

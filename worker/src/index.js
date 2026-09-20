@@ -10,6 +10,9 @@ const MODEL_CUBE_READ_PREFIX = "/api/v1/model-cube/";
 const MODEL_CUBE_UPLOAD_PREFIX = "/api/v1/model-cube-upload/";
 const MODEL_CUBE_KEY_PREFIX = "icon-eu/";
 const MAX_MODEL_KEY_LENGTH = 512;
+const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+const GITHUB_OIDC_AUDIENCE = "read-sensor-r2-upload";
+let githubOidcKeysCache = { expiresAt: 0, keys: [] };
 
 const validName = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value);
@@ -568,14 +571,85 @@ async function modelCubeRead(request, env, url) {
   });
 }
 
+function decodeJwtPart(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(normalized);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function decodeJwtJson(value) {
+  return JSON.parse(new TextDecoder().decode(decodeJwtPart(value)));
+}
+
+async function githubOidcKeys() {
+  const now = Date.now();
+  if (githubOidcKeysCache.expiresAt > now && githubOidcKeysCache.keys.length) return githubOidcKeysCache.keys;
+  const discoveryResponse = await fetch(`${GITHUB_OIDC_ISSUER}/.well-known/openid-configuration`);
+  if (!discoveryResponse.ok) throw new Error(`GitHub OIDC discovery HTTP ${discoveryResponse.status}`);
+  const discovery = await discoveryResponse.json();
+  const jwksResponse = await fetch(discovery.jwks_uri);
+  if (!jwksResponse.ok) throw new Error(`GitHub OIDC JWKS HTTP ${jwksResponse.status}`);
+  const jwks = await jwksResponse.json();
+  githubOidcKeysCache = { expiresAt: now + 60 * 60 * 1000, keys: jwks.keys || [] };
+  return githubOidcKeysCache.keys;
+}
+
+async function githubOidcAuthorized(token, env) {
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  let header;
+  let payload;
+  try {
+    header = decodeJwtJson(parts[0]);
+    payload = decodeJwtJson(parts[1]);
+  } catch {
+    return false;
+  }
+  if (header.alg !== "RS256" || typeof header.kid !== "string") return false;
+  const expectedRepository = `${env.GITHUB_OWNER || "oliwertwister"}/${env.GITHUB_REPOSITORY || "read-sensor"}`;
+  const expectedRef = `refs/heads/${env.GITHUB_REF || "main"}`;
+  const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    payload.iss !== GITHUB_OIDC_ISSUER ||
+    !audience.includes(GITHUB_OIDC_AUDIENCE) ||
+    payload.repository !== expectedRepository ||
+    payload.ref !== expectedRef ||
+    !["push", "workflow_dispatch"].includes(payload.event_name) ||
+    !Number.isFinite(payload.exp) || payload.exp <= now ||
+    (Number.isFinite(payload.nbf) && payload.nbf > now + 30)
+  ) return false;
+  const keys = await githubOidcKeys();
+  const jwk = keys.find((key) => key.kid === header.kid && key.kty === "RSA");
+  if (!jwk) return false;
+  const key = await crypto.subtle.importKey(
+    "jwk", jwk,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false, ["verify"],
+  );
+  const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+  return crypto.subtle.verify(
+    { name: "RSASSA-PKCS1-v1_5" }, key, decodeJwtPart(parts[2]), signed,
+  );
+}
+
 async function modelUploadAuthorized(request, env) {
   const supplied = bearerToken(request);
-  if (!supplied || typeof env.MODEL_UPLOAD_TOKEN !== "string" || env.MODEL_UPLOAD_TOKEN.length < 32) return false;
+  if (!supplied) return false;
+  if (supplied.split(".").length === 3) {
+    try {
+      return await githubOidcAuthorized(supplied, env);
+    } catch (error) {
+      console.error("github_oidc_validation_failed", error);
+      return false;
+    }
+  }
+  if (typeof env.MODEL_UPLOAD_TOKEN !== "string" || env.MODEL_UPLOAD_TOKEN.length < 32) return false;
   return (await sha256Hex(supplied)) === (await sha256Hex(env.MODEL_UPLOAD_TOKEN));
 }
 
 async function modelCubeUpload(request, env, url) {
-  if (!env.MODEL_CUBE || !env.MODEL_UPLOAD_TOKEN) return json(request, env, { error: "model_upload_unavailable" }, 503);
+  if (!env.MODEL_CUBE) return json(request, env, { error: "model_upload_unavailable" }, 503);
   if (!(await modelUploadAuthorized(request, env))) return json(request, env, { error: "unauthorized" }, 401);
   const relative = modelCubeRelativePath(url.pathname, MODEL_CUBE_UPLOAD_PREFIX);
   if (!relative) return json(request, env, { error: "invalid_model_path" }, 400);

@@ -77,9 +77,9 @@ Contour generation itself does not require arbitrary interpolation if the model 
 
 A parallel storage migration is now implemented in code without replacing the current map products yet. The ICON build writes a canonical **Zarr v3** cube with `sharding_indexed` storage, 128×128 logical horizontal chunks packed into 512×512 shards, and Blosc/Zstd compression. Canonical values are stored once (K, Pa, m, m/s, %, kg m-2) and presentation conversions remain a frontend concern.
 
-The target backend is **Cloudflare R2** behind the existing Worker. The Worker now contains dormant byte-range GET/HEAD and authenticated upload routes; `model/upload_zarr_cube.py` publishes immutable run prefixes and updates `latest.json` only after all run objects are uploaded. The browser connector lazy-loads a vendored Zarrita bundle only when an R2 cube pointer is available.
+The target backend is **Cloudflare R2** behind the existing Worker. The Worker exposes byte-range GET/HEAD routes and an authenticated upload route; GitHub Actions authenticates uploads with a short-lived GitHub OIDC token scoped to this repository/main branch and the custom `read-sensor-r2-upload` audience, so no long-lived upload secret is required. `model/upload_zarr_cube.py` publishes immutable run prefixes and updates `latest.json` only after all run objects are uploaded. The browser connector lazy-loads a vendored Zarrita bundle only when an R2 cube pointer is available.
 
-The current Cloudflare OAuth login on the development Mac has expired, so the R2 bucket/binding and upload secret are **not yet provisioned**. Until a normal Wrangler re-login is completed, the existing Pages-based raster/GeoJSON path remains authoritative and the R2 gateway fails closed. The full `cube.zarr/` directory is explicitly removed from the Pages artifact, so this prototype does not increase published-site storage.
+The R2 bucket is private, uses Standard storage, and has a verified 14-day lifecycle rule. The existing Pages-based raster/GeoJSON path remains available during migration. The full `cube.zarr/` directory is explicitly removed from the Pages artifact, so the numerical archive does not consume GitHub Pages storage.
 
 
 ## Storage and free-tier guardrails

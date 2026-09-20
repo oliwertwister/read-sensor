@@ -19,5 +19,9 @@
     "binding": "DB",
     "database_name": "read-sensor",
     "database_id": "3e6ea29d-fcb5-4b1e-be6f-62765a9f32b5"
+  }],
+  "r2_buckets": [{
+    "binding": "MODEL_CUBE",
+    "bucket_name": "read-sensor-model-cubes"
   }]
 }
