@@ -523,6 +523,7 @@
       iconModelState.rows.clear();
       iconModelState.meta = nextMeta;
       iconModelState.currentStepIndex = index;
+      if (select) select.value = String(index);
       updateModelMetaCards();
       updateAnimationControls();
       populatePressureControl();
