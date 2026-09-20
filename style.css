@@ -1231,3 +1231,17 @@ a { color: #58a6ff; }
   .sensor-history-heading { align-items:stretch; flex-direction:column; }
   .history-download-button { width:100%; }
 }
+
+/* Sensor temperature distribution */
+.sensor-distribution-section { margin-top:28px; }
+.sensor-distribution-heading { display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:12px; }
+.sensor-distribution-heading h3 { margin:0 0 4px; }
+#distributionChart {
+  width:100%;
+  min-height:300px;
+  max-height:380px;
+  border:1px solid #d0d7de;
+  border-radius:12px;
+  background:#f6f8fa;
+  box-shadow:0 8px 24px rgba(1,4,9,.12);
+}

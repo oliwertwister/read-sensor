@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=sensor-selection-modes-1">
+    <link rel="stylesheet" href="style.css?v=sensor-distribution-1">
   </head>
   <body>
     <header>
@@ -263,6 +263,17 @@
             <p class="muted">Red “No data” bands show periods without readings in the selected data range.</p>
           </section>
 
+          <section class="system-section sensor-distribution-section" aria-labelledby="distributionTitle">
+            <div class="sensor-distribution-heading">
+              <div>
+                <h3 id="distributionTitle">Temperature probability distribution</h3>
+                <span id="distributionSummary" class="muted">Normalized histogram · bar probabilities sum to 1</span>
+              </div>
+            </div>
+            <canvas id="distributionChart" width="900" height="300"></canvas>
+            <p class="muted">x = temperature (degrees_celsius) · y = probability per bin (count / total count), constrained to 0–1.</p>
+          </section>
+
           <section class="system-section sensor-history-section" aria-labelledby="historyTitle">
             <div class="sensor-history-heading">
               <div>
@@ -291,7 +302,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=sensor-selection-modes-1"></script>
+    <script src="app.js?v=sensor-distribution-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

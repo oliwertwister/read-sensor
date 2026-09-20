@@ -7,6 +7,8 @@ const state = {
   metric: config.defaultMetric,
   readings: [],
   chart: null,
+  distributionChart: null,
+  distributionMeta: [],
   sensorRollingWindow: false,
   sensorWindowMs: 24 * 60 * 60 * 1000,
   sensorWindowKey: "24h",
@@ -140,9 +142,139 @@ function formatDuration(milliseconds) {
   return hourRemainder ? `${days} d ${hourRemainder} h` : `${days} d`;
 }
 
+function quantile(sorted, q) {
+  if (!sorted.length) return NaN;
+  const position = (sorted.length - 1) * q;
+  const base = Math.floor(position);
+  const remainder = position - base;
+  return sorted[base + 1] === undefined
+    ? sorted[base]
+    : sorted[base] + remainder * (sorted[base + 1] - sorted[base]);
+}
+
+function temperatureDistribution(rows) {
+  const values = rows
+    .map((row) => Number(row.value))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  if (!values.length) return { labels: [], probabilities: [], meta: [], count: 0 };
+
+  const min = values[0];
+  const max = values.at(-1);
+  const range = max - min;
+  let binCount = 1;
+  if (range > 0 && values.length > 1) {
+    const q1 = quantile(values, 0.25);
+    const q3 = quantile(values, 0.75);
+    const iqr = q3 - q1;
+    const fdWidth = iqr > 0 ? (2 * iqr) / Math.cbrt(values.length) : 0;
+    const suggested = fdWidth > 0
+      ? Math.ceil(range / fdWidth)
+      : Math.ceil(Math.sqrt(values.length));
+    binCount = Math.min(30, Math.max(2, Math.min(values.length, suggested)));
+  }
+
+  const width = range > 0 ? range / binCount : 1;
+  const counts = Array(binCount).fill(0);
+  for (const value of values) {
+    const index = range > 0
+      ? Math.min(binCount - 1, Math.floor((value - min) / width))
+      : 0;
+    counts[index] += 1;
+  }
+
+  const decimals = width < 0.1 ? 2 : width < 1 ? 1 : 0;
+  const labels = [];
+  const meta = [];
+  const probabilities = counts.map((count, index) => {
+    const from = range > 0 ? min + index * width : min - 0.5;
+    const to = range > 0 ? (index === binCount - 1 ? max : min + (index + 1) * width) : min + 0.5;
+    const center = (from + to) / 2;
+    labels.push(center.toFixed(decimals));
+    meta.push({ from, to, count });
+    return count / values.length;
+  });
+
+  return { labels, probabilities, meta, count: values.length };
+}
+
+function renderTemperatureDistribution(timeline) {
+  const canvas = $("distributionChart");
+  const summary = $("distributionSummary");
+  if (!canvas) return;
+  const distribution = temperatureDistribution(timeline.seriesRows);
+  state.distributionMeta = distribution.meta;
+
+  if (summary) {
+    const totalProbability = distribution.probabilities.reduce((sum, value) => sum + value, 0);
+    summary.textContent = distribution.count
+      ? `${distribution.count.toLocaleString()} displayed values · ${distribution.probabilities.length} bins · sum = ${totalProbability.toFixed(3)}`
+      : "No values in the selected range";
+  }
+
+  if (state.distributionChart) {
+    state.distributionChart.data.labels = distribution.labels;
+    state.distributionChart.data.datasets[0].data = distribution.probabilities;
+    state.distributionChart.update("none");
+    return;
+  }
+
+  state.distributionChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: distribution.labels,
+      datasets: [{
+        label: "Probability per bin",
+        data: distribution.probabilities,
+        borderWidth: 1,
+      }],
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              if (!items.length) return "";
+              const meta = state.distributionMeta[items[0].dataIndex];
+              if (!meta) return "";
+              return `${meta.from.toFixed(2)} to ${meta.to.toFixed(2)} degrees_celsius`;
+            },
+            label(item) {
+              const probability = Number(item.raw || 0);
+              const meta = state.distributionMeta[item.dataIndex];
+              return `Probability ${probability.toFixed(3)} (${(probability * 100).toFixed(1)}%) · count ${meta?.count ?? 0}`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          title: { display: true, text: "Temperature (degrees_celsius)", color: "#57606a" },
+          ticks: { color: "#57606a", maxRotation: 0, autoSkip: true },
+          grid: { display: false },
+        },
+        y: {
+          min: 0,
+          max: 1,
+          title: { display: true, text: "Probability per bin", color: "#57606a" },
+          ticks: {
+            color: "#57606a",
+            callback(value) { return Number(value).toFixed(1); },
+          },
+          grid: { color: "rgba(27, 31, 36, 0.09)" },
+        },
+      },
+    },
+  });
+}
+
 function sensorUnit(reading) {
   const unit = reading?.unit || "";
-  return unit === "C" ? "°C" : unit;
+  return unit === "C" || unit === "°C" ? "degrees_celsius" : unit;
 }
 
 function aggregateSensorRows(visible, windowStart) {
@@ -393,6 +525,7 @@ function renderReadings() {
 
   const timeline = cpuWindow();
   updateCpuRange(timeline);
+  renderTemperatureDistribution(timeline);
   renderSensorHistory(timeline);
   const chartLabel = state.sensorAverageMinutes
     ? `${state.metric.replaceAll("_", " ")} · ${state.sensorAverageMinutes} min average`
@@ -1044,7 +1177,10 @@ function setSensorMode(mode) {
   });
   document.querySelectorAll(".sensor-mode-view").forEach((view) => view.classList.remove("active"));
   $(`sensorView${mode[0].toUpperCase()}${mode.slice(1)}`)?.classList.add("active");
-  if (mode === "chart" && state.chart) state.chart.resize();
+  if (mode === "chart") {
+    if (state.chart) state.chart.resize();
+    if (state.distributionChart) state.distributionChart.resize();
+  }
 }
 
 function initSensorModes() {
