@@ -139,11 +139,9 @@ def decorate(image: Image.Image, countries: dict) -> Image.Image:
     for lon in range(-20, 41, 10):
         x = x_of(lon)
         draw.line((x, 0, x, height), fill=(230, 238, 246, 95), width=1)
-        label(draw, (x, 22), f"{abs(lon)}°{'W' if lon < 0 else 'E' if lon > 0 else ''}")
     for lat in range(30, 71, 5):
         y = y_of(lat)
         draw.line((0, y, width, y), fill=(230, 238, 246, 95), width=1)
-        label(draw, (42, y), f"{lat}°N")
 
     # Berlin raccoon marker uses the same WGS84/CRS:84 extent as the grid.
     berlin_lon, berlin_lat = 13.4050, 52.5200

@@ -1135,11 +1135,21 @@ async function loadIconSynoptic() {
     $("iconValidTime").textContent = iconTime(meta.valid_at);
     $("iconSatelliteTime").textContent = iconTime(meta.satellite_observed_at);
     $("iconGridSpacing").textContent = meta.grid_spacing_degrees == null ? "—" : `${meta.grid_spacing_degrees}°`;
-    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 5} degrees_celsius · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
+    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 5} °C · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
     const valid = new Date(meta.valid_at || "");
-    const ageHours = Number.isNaN(valid.getTime()) ? NaN : Math.abs(Date.now() - valid.getTime()) / 3600000;
-    freshness.textContent = Number.isFinite(ageHours) ? `${ageHours.toFixed(1)} h from valid time` : "Loaded";
-    freshness.className = `status ${Number.isFinite(ageHours) && ageHours <= 4 ? "ok" : "warning"}`;
+    const deltaMinutes = Number.isNaN(valid.getTime()) ? NaN : Math.round((valid.getTime() - Date.now()) / 60000);
+    const absMinutes = Math.abs(deltaMinutes);
+    if (!Number.isFinite(deltaMinutes)) {
+      freshness.textContent = "Loaded";
+    } else if (absMinutes < 5) {
+      freshness.textContent = "Valid now";
+    } else if (absMinutes < 60) {
+      freshness.textContent = deltaMinutes > 0 ? `Valid in ${absMinutes} min` : `Valid ${absMinutes} min ago`;
+    } else {
+      const hours = (absMinutes / 60).toFixed(1);
+      freshness.textContent = deltaMinutes > 0 ? `Valid in ${hours} h` : `Valid ${hours} h ago`;
+    }
+    freshness.className = `status ${Number.isFinite(deltaMinutes) && absMinutes <= 240 ? "ok" : "warning"}`;
   } catch (error) {
     console.error("icon_synoptic_failed", error);
     freshness.textContent = "Unavailable";

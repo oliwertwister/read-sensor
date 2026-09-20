@@ -169,11 +169,30 @@ def render(
     pressure_levels = levels_covering(float(np.nanpercentile(pp, 1)), float(np.nanpercentile(pp, 99)), 4.0)
     temp_levels = levels_covering(float(np.nanpercentile(tt, 2)), float(np.nanpercentile(tt, 98)), 5.0)
 
-    pressure = ax.contour(lons, lats, pp, levels=pressure_levels, linewidths=1.25, colors="white", alpha=0.92, zorder=4)
-    ax.clabel(pressure, inline=True, fontsize=7, fmt=lambda value: f"{value:.0f}")
+    pressure = ax.contour(lons, lats, pp, levels=pressure_levels, linewidths=1.3, colors="white", alpha=0.95, zorder=4)
+    pressure_labels = ax.clabel(
+        pressure, inline=True, inline_spacing=5, fontsize=8, colors="white",
+        fmt=lambda value: f"{value:.0f}",
+    )
+    for text in pressure_labels:
+        text.set_bbox({"facecolor": "black", "edgecolor": "none", "alpha": 0.55, "pad": 0.5})
 
-    temperature = ax.contour(lons, lats, tt, levels=temp_levels, linewidths=1.0, colors="black", alpha=0.86, zorder=3)
-    ax.clabel(temperature, inline=True, fontsize=7, fmt=lambda value: f"{value:.0f}")
+    # A subtle white underlay keeps the black 2 m isotherms readable over both
+    # dark ocean and bright cloud tops without changing their black identity.
+    ax.contour(
+        lons, lats, tt, levels=temp_levels, linewidths=3.0,
+        colors="white", alpha=0.45, zorder=4.5,
+    )
+    temperature = ax.contour(
+        lons, lats, tt, levels=temp_levels, linewidths=1.8,
+        colors="black", alpha=1.0, zorder=5,
+    )
+    temperature_labels = ax.clabel(
+        temperature, inline=True, inline_spacing=5, fontsize=8, colors="black",
+        fmt=lambda value: f"{value:.0f}°C",
+    )
+    for text in temperature_labels:
+        text.set_bbox({"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.5})
 
     # Roughly 2-degree spacing keeps the wind layer legible on a Europe view.
     lon_stride = max(1, round(2.0 / abs(float(np.median(np.diff(lons))))))
@@ -188,15 +207,25 @@ def render(
     valid = run + timedelta(hours=lead)
     ax.set_xlim(west, east)
     ax.set_ylim(south, north)
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.set_title(
-        f"ICON-EU synoptic overlay · valid {valid:%Y-%m-%d %H:%M} UTC\n"
-        f"white: PMSL isobars (4 hPa) · black: 2 m isotherms (5 degrees_celsius) · arrows: 10 m wind",
-        fontsize=11,
+
+    lon_ticks = np.arange(-20, 41, 10)
+    lat_ticks = np.arange(30, 71, 5)
+    ax.set_xticks(lon_ticks)
+    ax.set_yticks(lat_ticks)
+    ax.set_xticklabels([
+        f"{abs(int(value))}°W" if value < 0 else f"{int(value)}°E" if value > 0 else "0°"
+        for value in lon_ticks
+    ])
+    ax.set_yticklabels([f"{int(value)}°N" for value in lat_ticks])
+    ax.tick_params(
+        axis="both", which="major", direction="out", pad=7,
+        length=4, labelsize=9, top=False, right=False,
+        labeltop=False, labelright=False,
     )
+    ax.set_xlabel("")
+    ax.set_ylabel("")
     ax.grid(False)
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.065, right=0.992, bottom=0.085, top=0.992)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, format="webp", dpi=100, pil_kwargs={"quality": 90, "method": 6})
     plt.close(fig)
