@@ -32,6 +32,20 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Verify R2 upload identity
+        env:
+          MODEL_CUBE_AUTH_CHECK_URL: https://read-sensor-api.read-sensor.workers.dev/api/v1/model-cube-upload-auth-check
+        run: |
+          OIDC_JSON=$(curl --fail --silent --show-error \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=read-sensor-r2-upload")
+          OIDC_TOKEN=$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<< "$OIDC_JSON")
+          CLAIMS=$(OIDC_TOKEN="$OIDC_TOKEN" python -c 'import base64,json,os; token=os.environ["OIDC_TOKEN"]; payload=token.split(".")[1]; payload += "=" * (-len(payload) % 4); data=json.loads(base64.urlsafe_b64decode(payload)); keys=("iss","aud","repository","ref","event_name","environment","repository_visibility","runner_environment","workflow_ref","sub"); print(json.dumps({key:data.get(key) for key in keys}, sort_keys=True))')
+          echo "GitHub OIDC safe claims: $CLAIMS"
+          curl --fail-with-body --silent --show-error \
+            -X POST -H "Authorization: Bearer $OIDC_TOKEN" \
+            "$MODEL_CUBE_AUTH_CHECK_URL"
+
       - name: Set up Node.js
         if: github.event_name == 'push' || inputs.satellite_only != true
         uses: actions/setup-node@v6

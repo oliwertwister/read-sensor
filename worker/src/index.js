@@ -8,6 +8,7 @@ const MAX_RETENTION_DAYS = 30;
 const GITHUB_API_VERSION = "2026-03-10";
 const MODEL_CUBE_READ_PREFIX = "/api/v1/model-cube/";
 const MODEL_CUBE_UPLOAD_PREFIX = "/api/v1/model-cube-upload/";
+const MODEL_CUBE_AUTH_CHECK = "/api/v1/model-cube-upload-auth-check";
 const MODEL_CUBE_KEY_PREFIX = "icon-eu/";
 const MAX_MODEL_KEY_LENGTH = 512;
 const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
@@ -594,42 +595,87 @@ async function githubOidcKeys() {
   return githubOidcKeysCache.keys;
 }
 
-async function githubOidcAuthorized(token, env) {
+async function githubOidcValidation(token, env) {
   const parts = token.split(".");
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return { ok: false, reason: "jwt_parts" };
   let header;
   let payload;
   try {
     header = decodeJwtJson(parts[0]);
     payload = decodeJwtJson(parts[1]);
   } catch {
-    return false;
+    return { ok: false, reason: "jwt_decode" };
   }
-  if (header.alg !== "RS256" || typeof header.kid !== "string") return false;
+  const safeClaims = {
+    iss: payload.iss || null,
+    aud: payload.aud || null,
+    repository: payload.repository || null,
+    ref: payload.ref || null,
+    event_name: payload.event_name || null,
+    environment: payload.environment || null,
+    repository_visibility: payload.repository_visibility || null,
+    runner_environment: payload.runner_environment || null,
+    workflow_ref: payload.workflow_ref || null,
+    sub: payload.sub || null,
+    alg: header.alg || null,
+    kid: header.kid || null,
+  };
+  if (header.alg !== "RS256" || typeof header.kid !== "string") return { ok: false, reason: "jwt_header", safeClaims };
   const expectedRepository = `${env.GITHUB_OWNER || "oliwertwister"}/${env.GITHUB_REPOSITORY || "read-sensor"}`;
   const expectedRef = `refs/heads/${env.GITHUB_REF || "main"}`;
   const audience = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
   const now = Math.floor(Date.now() / 1000);
-  if (
-    payload.iss !== GITHUB_OIDC_ISSUER ||
-    !audience.includes(GITHUB_OIDC_AUDIENCE) ||
-    payload.repository !== expectedRepository ||
-    payload.ref !== expectedRef ||
-    !["push", "workflow_dispatch"].includes(payload.event_name) ||
-    !Number.isFinite(payload.exp) || payload.exp <= now ||
-    (Number.isFinite(payload.nbf) && payload.nbf > now + 30)
-  ) return false;
-  const keys = await githubOidcKeys();
+  if (payload.iss !== GITHUB_OIDC_ISSUER) return { ok: false, reason: "issuer", safeClaims };
+  if (!audience.includes(GITHUB_OIDC_AUDIENCE)) return { ok: false, reason: "audience", safeClaims };
+  if (payload.repository !== expectedRepository) return { ok: false, reason: "repository", safeClaims };
+  if (payload.ref !== expectedRef) return { ok: false, reason: "ref", safeClaims };
+  if (!["push", "workflow_dispatch"].includes(payload.event_name)) return { ok: false, reason: "event_name", safeClaims };
+  if (!Number.isFinite(payload.exp) || payload.exp <= now) return { ok: false, reason: "expired", safeClaims };
+  if (Number.isFinite(payload.nbf) && payload.nbf > now + 30) return { ok: false, reason: "not_before", safeClaims };
+  let keys;
+  try {
+    keys = await githubOidcKeys();
+  } catch (error) {
+    console.error("github_oidc_jwks_failed", error);
+    return { ok: false, reason: "jwks_fetch", safeClaims };
+  }
   const jwk = keys.find((key) => key.kid === header.kid && key.kty === "RSA");
-  if (!jwk) return false;
-  const key = await crypto.subtle.importKey(
-    "jwk", jwk,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false, ["verify"],
-  );
-  const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
-  return crypto.subtle.verify(
-    { name: "RSASSA-PKCS1-v1_5" }, key, decodeJwtPart(parts[2]), signed,
+  if (!jwk) return { ok: false, reason: "jwks_kid", safeClaims };
+  let verified = false;
+  try {
+    const key = await crypto.subtle.importKey(
+      "jwk", jwk,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false, ["verify"],
+    );
+    const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+    verified = await crypto.subtle.verify(
+      { name: "RSASSA-PKCS1-v1_5" }, key, decodeJwtPart(parts[2]), signed,
+    );
+  } catch (error) {
+    console.error("github_oidc_signature_failed", error);
+    return { ok: false, reason: "signature_error", safeClaims };
+  }
+  if (!verified) return { ok: false, reason: "signature_invalid", safeClaims };
+  return { ok: true, reason: "ok", safeClaims };
+}
+
+async function githubOidcAuthorized(token, env) {
+  return (await githubOidcValidation(token, env)).ok;
+}
+
+async function modelUploadAuthCheck(request, env) {
+  const supplied = bearerToken(request);
+  if (!supplied) return json(request, env, { ok: false, reason: "missing_bearer" }, 401);
+  if (supplied.split(".").length !== 3) {
+    const ok = await modelUploadAuthorized(request, env);
+    return json(request, env, { ok, reason: ok ? "shared_secret" : "unauthorized" }, ok ? 200 : 401);
+  }
+  const validation = await githubOidcValidation(supplied, env);
+  return json(
+    request, env,
+    { ok: validation.ok, reason: validation.reason, claims: validation.safeClaims || null },
+    validation.ok ? 200 : 401,
   );
 }
 
@@ -740,6 +786,9 @@ export default {
       }
       if (url.pathname.startsWith(MODEL_CUBE_READ_PREFIX) && (request.method === "GET" || request.method === "HEAD")) {
         return await modelCubeRead(request, env, url);
+      }
+      if (url.pathname === MODEL_CUBE_AUTH_CHECK && request.method === "POST") {
+        return await modelUploadAuthCheck(request, env);
       }
       if (url.pathname.startsWith(MODEL_CUBE_UPLOAD_PREFIX) && request.method === "PUT") {
         return await modelCubeUpload(request, env, url);
