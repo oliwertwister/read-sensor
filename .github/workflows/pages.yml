@@ -17,8 +17,10 @@ permissions:
   id-token: write
 
 concurrency:
+  # Never cancel a push validation/deploy just because the 15-minute refresh fires.
+  # New refreshes wait for the current Pages run instead, preventing false cancelled checks.
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
