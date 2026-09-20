@@ -1245,3 +1245,28 @@ a { color: #58a6ff; }
   background:#f6f8fa;
   box-shadow:0 8px 24px rgba(1,4,9,.12);
 }
+
+.distribution-toggle {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:7px 10px;
+  border:1px solid #30363d;
+  border-radius:9px;
+  background:#161b22;
+  color:#c9d1d9;
+  font-size:.8rem;
+  font-weight:600;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.distribution-toggle input[type="checkbox"] {
+  width:16px;
+  height:16px;
+  margin:0;
+  accent-color:#1f6feb;
+}
+@media(max-width:680px){
+  .sensor-distribution-heading { align-items:stretch; flex-direction:column; }
+  .distribution-toggle { width:max-content; }
+}

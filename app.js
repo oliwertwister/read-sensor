@@ -9,6 +9,7 @@ const state = {
   chart: null,
   distributionChart: null,
   distributionMeta: [],
+  normalizeTemperature: false,
   sensorRollingWindow: false,
   sensorWindowMs: 24 * 60 * 60 * 1000,
   sensorWindowKey: "24h",
@@ -152,7 +153,7 @@ function quantile(sorted, q) {
     : sorted[base] + remainder * (sorted[base + 1] - sorted[base]);
 }
 
-function temperatureDistribution(rows) {
+function temperatureDistribution(rows, normalizeTemperature = false) {
   const values = rows
     .map((row) => Number(row.value))
     .filter(Number.isFinite)
@@ -191,20 +192,27 @@ function temperatureDistribution(rows) {
     const to = range > 0 ? (index === binCount - 1 ? max : min + (index + 1) * width) : min + 0.5;
     const center = (from + to) / 2;
     const probability = count / values.length;
-    meta.push({ from, to, center, count });
+    const normalizedCenter = range > 0 ? (center - min) / range : 0.5;
+    meta.push({ from, to, center, normalizedCenter, count });
     probabilities.push(probability);
-    return { x: center, y: probability };
+    return { x: normalizeTemperature ? normalizedCenter : center, y: probability };
   });
 
-  return { points, probabilities, meta, count: values.length, decimals };
+  return { points, probabilities, meta, count: values.length, decimals, min, max, range, normalized: normalizeTemperature };
 }
 
 function renderTemperatureDistribution(timeline) {
   const canvas = $("distributionChart");
   const summary = $("distributionSummary");
   if (!canvas) return;
-  const distribution = temperatureDistribution(timeline.seriesRows);
+  const distribution = temperatureDistribution(timeline.seriesRows, state.normalizeTemperature);
   state.distributionMeta = distribution.meta;
+  const axisNote = $("distributionAxisNote");
+  if (axisNote) {
+    axisNote.textContent = state.normalizeTemperature
+      ? "x = normalized temperature (0–1; min–max) · y = probability per bin (count / total count), constrained to 0–1."
+      : "x = temperature (degrees_celsius) · y = probability per bin (count / total count), constrained to 0–1.";
+  }
 
   if (summary) {
     const totalProbability = distribution.probabilities.reduce((sum, value) => sum + value, 0);
@@ -215,6 +223,11 @@ function renderTemperatureDistribution(timeline) {
 
   if (state.distributionChart) {
     state.distributionChart.data.datasets[0].data = distribution.points;
+    state.distributionChart.options.scales.x.min = state.normalizeTemperature ? 0 : undefined;
+    state.distributionChart.options.scales.x.max = state.normalizeTemperature ? 1 : undefined;
+    state.distributionChart.options.scales.x.title.text = state.normalizeTemperature
+      ? "Normalized temperature (0–1)"
+      : "Temperature (degrees_celsius)";
     state.distributionChart.update("none");
     return;
   }
@@ -250,7 +263,11 @@ function renderTemperatureDistribution(timeline) {
             label(item) {
               const probability = Number(item.parsed.y || 0);
               const meta = state.distributionMeta[item.dataIndex];
-              return `Probability ${probability.toFixed(3)} (${(probability * 100).toFixed(1)}%) · count ${meta?.count ?? 0}`;
+              const normalized = meta?.normalizedCenter;
+              const suffix = state.normalizeTemperature && Number.isFinite(normalized)
+                ? ` · normalized x ${normalized.toFixed(3)}`
+                : "";
+              return `Probability ${probability.toFixed(3)} (${(probability * 100).toFixed(1)}%) · count ${meta?.count ?? 0}${suffix}`;
             },
           },
         },
@@ -258,7 +275,13 @@ function renderTemperatureDistribution(timeline) {
       scales: {
         x: {
           type: "linear",
-          title: { display: true, text: "Temperature (degrees_celsius)", color: "#57606a" },
+          min: state.normalizeTemperature ? 0 : undefined,
+          max: state.normalizeTemperature ? 1 : undefined,
+          title: {
+            display: true,
+            text: state.normalizeTemperature ? "Normalized temperature (0–1)" : "Temperature (degrees_celsius)",
+            color: "#57606a",
+          },
           ticks: {
             color: "#57606a",
             maxRotation: 0,
@@ -718,6 +741,14 @@ function syncSensorSelectionControls() {
   state.sensorRollingWindow = rolling.checked;
   windowSelect.disabled = !state.sensorRollingWindow;
   limitInput.disabled = state.sensorRollingWindow;
+}
+
+function initDistributionControls() {
+  const checkbox = $("normalizeTemperature");
+  checkbox?.addEventListener("change", () => {
+    state.normalizeTemperature = checkbox.checked;
+    renderReadings();
+  });
 }
 
 function initSensorChartControls() {
@@ -1320,6 +1351,7 @@ async function init() {
   initTabs();
   initSensorModes();
   initSensorChartControls();
+  initDistributionControls();
   initAviationSearch();
   initIconCharts();
   initSatellite();
