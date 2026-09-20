@@ -35,6 +35,15 @@ FIELD_SPECS = {
     "fi_850": {"directory": "fi", "kind": "pressure-level", "level": "850", "variable": "FI"},
     "fi_700": {"directory": "fi", "kind": "pressure-level", "level": "700", "variable": "FI"},
     "fi_500": {"directory": "fi", "kind": "pressure-level", "level": "500", "variable": "FI"},
+    "rh_850": {"directory": "relhum", "kind": "pressure-level", "level": "850", "variable": "RELHUM"},
+    "rh_700": {"directory": "relhum", "kind": "pressure-level", "level": "700", "variable": "RELHUM"},
+    "rh_500": {"directory": "relhum", "kind": "pressure-level", "level": "500", "variable": "RELHUM"},
+    "u_850": {"directory": "u", "kind": "pressure-level", "level": "850", "variable": "U"},
+    "u_700": {"directory": "u", "kind": "pressure-level", "level": "700", "variable": "U"},
+    "u_500": {"directory": "u", "kind": "pressure-level", "level": "500", "variable": "U"},
+    "v_850": {"directory": "v", "kind": "pressure-level", "level": "850", "variable": "V"},
+    "v_700": {"directory": "v", "kind": "pressure-level", "level": "700", "variable": "V"},
+    "v_500": {"directory": "v", "kind": "pressure-level", "level": "500", "variable": "V"},
 }
 
 FILE_RE = re.compile(
@@ -45,8 +54,8 @@ FILE_RE = re.compile(
 DISPLAY_SPECS = {
     "t2m": {
         "label": "2 m temperature", "unit": "degrees_celsius", "cmap": "coolwarm",
-        "vmin": -20.0, "vmax": 40.0, "contours": list(np.arange(-40, 42, 2)),
-        "line_color": "#101010", "decimals": 1, "label_every": 4,
+        "vmin": -20.0, "vmax": 40.0, "contours": list(np.arange(-40, 44, 4)),
+        "line_color": "#101010", "decimals": 1, "label_every": 8,
     },
     "pmsl": {
         "label": "Mean sea-level pressure", "unit": "hPa", "cmap": "viridis",
@@ -88,6 +97,16 @@ PRESSURE_DISPLAY_SPECS = {
         "vmin": 100.0, "vmax": 1000.0, "contours": [],
         "line_color": "#5d3a9b", "decimals": 1, "label_every": 12,
     },
+    "rh": {
+        "label": "Relative humidity", "unit": "%", "cmap": "YlGnBu",
+        "vmin": 0.0, "vmax": 100.0, "contours": [20, 40, 60, 80, 90, 100],
+        "line_color": "#166b8f", "decimals": 0, "label_every": 20,
+    },
+    "wind": {
+        "label": "Wind speed", "unit": "m/s", "cmap": "plasma",
+        "vmin": 0.0, "vmax": 50.0, "contours": [5, 10, 15, 20, 25, 30, 40, 50, 60],
+        "line_color": "#9b4f00", "decimals": 1, "label_every": 10,
+    },
 }
 
 
@@ -101,8 +120,11 @@ def pressure_spec(kind: str, level: int) -> dict:
         # Level-specific display ranges improve colour contrast without affecting queried values.
         ranges = {850: (100.0, 180.0), 700: (250.0, 340.0), 500: (480.0, 600.0)}
         spec["vmin"], spec["vmax"] = ranges[level]
-    else:
+    elif kind == "temp":
         ranges = {850: (-35.0, 30.0), 700: (-45.0, 20.0), 500: (-60.0, 5.0)}
+        spec["vmin"], spec["vmax"] = ranges[level]
+    elif kind == "wind":
+        ranges = {850: (0.0, 35.0), 700: (0.0, 45.0), 500: (0.0, 55.0)}
         spec["vmin"], spec["vmax"] = ranges[level]
     return spec
 
@@ -227,6 +249,12 @@ def prepared_fields(raw: dict) -> tuple[dict[str, np.ndarray], np.ndarray, np.nd
     for level in PRESSURE_LEVELS_HPA:
         arrays[f"temp_{level}"] = np.asarray(grids[f"t_{level}"].values, dtype=np.float32) - 273.15
         arrays[f"z_{level}"] = np.asarray(grids[f"fi_{level}"].values, dtype=np.float32) / 9.80665 / 10.0
+        arrays[f"rh_{level}"] = np.asarray(grids[f"rh_{level}"].values, dtype=np.float32)
+        pu = np.asarray(grids[f"u_{level}"].values, dtype=np.float32)
+        pv = np.asarray(grids[f"v_{level}"].values, dtype=np.float32)
+        arrays[f"wind_{level}"] = np.hypot(pu, pv).astype(np.float32)
+        arrays[f"_u_{level}"] = pu
+        arrays[f"_v_{level}"] = pv
     u = np.asarray(grids["u_10m"].values, dtype=np.float32)
     v = np.asarray(grids["v_10m"].values, dtype=np.float32)
     arrays["wind"] = np.hypot(u, v).astype(np.float32)
@@ -415,7 +443,7 @@ def interactive_metadata(
     pressure_fields = {}
     for level in PRESSURE_LEVELS_HPA:
         pressure_fields[str(level)] = {}
-        for kind in ("temp", "z"):
+        for kind in ("temp", "z", "rh", "wind"):
             field_id = f"{kind}_{level}"
             array = arrays[field_id]
             spec = pressure_spec(kind, level)
@@ -455,6 +483,19 @@ def interactive_metadata(
                     "default": False, "opacity": 0.9,
                 },
             ])
+
+        pressure_vectors_file = f"wind-{level}-vectors.geojson"
+        wind_vectors_geojson(
+            lons, lats, arrays[f"_u_{level}"], arrays[f"_v_{level}"],
+            output_dir / pressure_vectors_file, spacing_degrees=2.0,
+        )
+        layers.append({
+            "id": f"pressure_wind_vectors_{level}", "field": f"wind_{level}", "kind": "vectors",
+            "label": f"{level} hPa wind · vectors", "group": "Pressure-level fields",
+            "file": f"{public_prefix}/{pressure_vectors_file}",
+            "pressure_level_hpa": level, "pressure_variable": "wind",
+            "default": False, "opacity": 0.85,
+        })
 
     vectors_file = "wind-vectors.geojson"
     wind_vectors_geojson(lons, lats, arrays["_u10"], arrays["_v10"], output_dir / vectors_file)
@@ -551,7 +592,7 @@ def main() -> int:
                 "horizontal": {"coordinates": ["latitude", "longitude"]},
                 "pressure_level_hpa": {
                     "values": list(PRESSURE_LEVELS_HPA),
-                    "variables": ["temperature", "geopotential_height"],
+                    "variables": ["temperature", "geopotential_height", "relative_humidity", "wind"],
                 },
             }
             meta_file = step_dir / "meta.json"

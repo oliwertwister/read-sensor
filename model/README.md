@@ -17,13 +17,15 @@ The build discovers the freshest complete regular-lat/lon run and chooses the fo
 - `CLCT` - total cloud cover;
 - `TOT_PREC` - accumulated precipitation from model initialization to valid time;
 - pressure-level `T` at 850, 700, and 500 hPa - K to `degrees_celsius`;
-- pressure-level `FI` at 850, 700, and 500 hPa - geopotential converted to geopotential height in decametres (`dam`), with one-decimal query precision.
+- pressure-level `FI` at 850, 700, and 500 hPa - geopotential converted to geopotential height in decametres (`dam`), with one-decimal query precision;
+- pressure-level `RELHUM` at 850, 700, and 500 hPa - relative humidity in percent;
+- pressure-level `U` / `V` at 850, 700, and 500 hPa - wind components plus derived speed and thinned vectors.
 
 
 The published model cube is therefore currently bounded as:
 
 ```text
-time (3) × pressure_level (850/700/500 hPa) × pressure_variable (temperature/geopotential height) × latitude × longitude
+time (3) × pressure_level (850/700/500 hPa) × pressure_variable (temperature/geopotential height/relative humidity/wind) × latitude × longitude
 ```
 
 Surface fields remain separate physical vertical coordinates rather than being forced into the pressure-level axis.
@@ -72,7 +74,7 @@ The initial interactive stack is:
 
 - MTG/FCI Geo Colour background;
 - 2 m temperature colour raster;
-- 2 m temperature 2 `degrees_celsius` isolines, labelled to one decimal place;
+- 2 m temperature 4 `degrees_celsius` isolines, labelled to one decimal place;
 - PMSL 4 hPa isobars;
 - thinned 10 m wind vectors.
 
@@ -80,7 +82,7 @@ Other generated fields are loaded only when the user enables them, so large cont
 
 ## Static synoptic product
 
-`render_icon_synoptic.py` still generates `synoptic.webp` for a compact overview with white PMSL isobars every 4 hPa, black 2 m isotherms every 2 `degrees_celsius`, white 10 m wind arrows, and the current MTG/FCI Geo Colour raster background. The static image and interactive layers use the same selected ICON run/lead.
+`render_icon_synoptic.py` still generates `synoptic.webp` for a compact overview with white PMSL isobars every 4 hPa, black 2 m isotherms every 4 `degrees_celsius`, white 10 m wind arrows, and the current MTG/FCI Geo Colour raster background. The static image and interactive layers use the same selected ICON run/lead.
 
 ## Why Leaflet remains the map engine
 
