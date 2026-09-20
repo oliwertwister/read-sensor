@@ -12,6 +12,7 @@
     selectedPressureLevel: null,
     layerPreferences: new Map(),
     switchSerial: 0,
+    cubeState: null,
     initializing: null,
   };
 
@@ -563,6 +564,17 @@
       ));
     }
   }
+  async function probeCubeStorage() {
+    if (!window.ReadSensorCube?.connect) return;
+    const state = await window.ReadSensorCube.connect();
+    iconModelState.cubeState = state;
+    if (state.available) {
+      console.info("model_cube_ready", { run_at: state.latest?.run_at, shape: state.latest?.shape });
+    } else {
+      console.info("model_cube_unavailable", state.reason);
+    }
+  }
+
   async function initializeModelMap() {
     if (iconModelState.map) {
       iconModelState.map.invalidateSize({ pan: false, animate: false });
@@ -597,6 +609,7 @@
           map.fitBounds(iconModelState.meta.bounds, { padding: [8, 8] });
         });
         setMapStatus("Interactive fields ready", "ok");
+        void probeCubeStorage();
       } catch (error) {
         console.error("icon_map_init_failed", error);
         setMapStatus("Interactive map unavailable", "error");
