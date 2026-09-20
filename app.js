@@ -157,7 +157,7 @@ function temperatureDistribution(rows) {
     .map((row) => Number(row.value))
     .filter(Number.isFinite)
     .sort((a, b) => a - b);
-  if (!values.length) return { labels: [], probabilities: [], meta: [], count: 0 };
+  if (!values.length) return { points: [], probabilities: [], meta: [], count: 0 };
 
   const min = values[0];
   const max = values.at(-1);
@@ -184,18 +184,19 @@ function temperatureDistribution(rows) {
   }
 
   const decimals = width < 0.1 ? 2 : width < 1 ? 1 : 0;
-  const labels = [];
   const meta = [];
-  const probabilities = counts.map((count, index) => {
+  const probabilities = [];
+  const points = counts.map((count, index) => {
     const from = range > 0 ? min + index * width : min - 0.5;
     const to = range > 0 ? (index === binCount - 1 ? max : min + (index + 1) * width) : min + 0.5;
     const center = (from + to) / 2;
-    labels.push(center.toFixed(decimals));
-    meta.push({ from, to, count });
-    return count / values.length;
+    const probability = count / values.length;
+    meta.push({ from, to, center, count });
+    probabilities.push(probability);
+    return { x: center, y: probability };
   });
 
-  return { labels, probabilities, meta, count: values.length };
+  return { points, probabilities, meta, count: values.length, decimals };
 }
 
 function renderTemperatureDistribution(timeline) {
@@ -213,20 +214,23 @@ function renderTemperatureDistribution(timeline) {
   }
 
   if (state.distributionChart) {
-    state.distributionChart.data.labels = distribution.labels;
-    state.distributionChart.data.datasets[0].data = distribution.probabilities;
+    state.distributionChart.data.datasets[0].data = distribution.points;
     state.distributionChart.update("none");
     return;
   }
 
   state.distributionChart = new Chart(canvas, {
-    type: "bar",
+    type: "line",
     data: {
-      labels: distribution.labels,
       datasets: [{
         label: "Probability per bin",
-        data: distribution.probabilities,
-        borderWidth: 1,
+        data: distribution.points,
+        parsing: false,
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: false,
+        tension: 0.18,
       }],
     },
     options: {
@@ -244,7 +248,7 @@ function renderTemperatureDistribution(timeline) {
               return `${meta.from.toFixed(2)} to ${meta.to.toFixed(2)} degrees_celsius`;
             },
             label(item) {
-              const probability = Number(item.raw || 0);
+              const probability = Number(item.parsed.y || 0);
               const meta = state.distributionMeta[item.dataIndex];
               return `Probability ${probability.toFixed(3)} (${(probability * 100).toFixed(1)}%) · count ${meta?.count ?? 0}`;
             },
@@ -253,8 +257,13 @@ function renderTemperatureDistribution(timeline) {
       },
       scales: {
         x: {
+          type: "linear",
           title: { display: true, text: "Temperature (degrees_celsius)", color: "#57606a" },
-          ticks: { color: "#57606a", maxRotation: 0, autoSkip: true },
+          ticks: {
+            color: "#57606a",
+            maxRotation: 0,
+            callback(value) { return Number(value).toFixed(1); },
+          },
           grid: { display: false },
         },
         y: {
