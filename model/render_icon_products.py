@@ -139,6 +139,42 @@ def discover_selection(now: datetime) -> tuple[datetime, int, dict[str, str]]:
     raise RuntimeError("Could not find a complete ICON-EU interactive field set")
 
 
+def discover_time_series(now: datetime, radius: int = 1) -> tuple[datetime, list[tuple[int, dict[str, str]]], int]:
+    """Return a bounded set of complete leads from one run around current time."""
+    run, selected_lead, _ = discover_selection(now)
+    cycle = f"{run.hour:02d}"
+    cache: dict[tuple[str, str], str] = {}
+    rows_by_field = {key: list_field(cycle, key, cache) for key in FIELD_SPECS}
+    leads_by_field = {
+        key: {row["lead"]: row for row in rows if row["run"] == run}
+        for key, rows in rows_by_field.items()
+    }
+    common = sorted(set.intersection(*(set(rows) for rows in leads_by_field.values())))
+    if not common:
+        raise RuntimeError(f"No complete ICON-EU leads for run {run.isoformat()}")
+    valid_times = [run + timedelta(hours=lead) for lead in common]
+    past_indices = [index for index, valid in enumerate(valid_times) if valid <= now]
+    current_full_index = past_indices[-1] if past_indices else 0
+    start = max(0, current_full_index - radius)
+    stop = min(len(common), current_full_index + radius + 1)
+    # Preserve the requested window width near the edges.
+    width = min(len(common), radius * 2 + 1)
+    if stop - start < width:
+        if start == 0:
+            stop = min(len(common), width)
+        else:
+            start = max(0, len(common) - width)
+    selected = []
+    for lead in common[start:stop]:
+        urls = {key: leads_by_field[key][lead]["url"] for key in FIELD_SPECS}
+        selected.append((lead, urls))
+    current_index = next(
+        (index for index, (lead, _) in enumerate(selected) if lead == common[current_full_index]),
+        min(range(len(selected)), key=lambda index: abs(selected[index][0] - selected_lead)),
+    )
+    return run, selected, current_index
+
+
 def regular_grid(data):
     data = syn.normalize_grid(data)
     lat_name = "latitude" if "latitude" in data.coords else "lat"
@@ -290,6 +326,7 @@ def interactive_metadata(
     output_dir: Path,
     run: datetime,
     lead: int,
+    public_prefix: str = "model",
 ) -> dict:
     south, north = float(np.min(lats)), float(np.max(lats))
     west, east = float(np.min(lons)), float(np.max(lons))
@@ -320,9 +357,9 @@ def interactive_metadata(
             "label": spec["label"],
             "unit": spec["unit"],
             "decimals": spec["decimals"],
-            "grid_file": f"model/{grid_file}",
-            "fill_file": f"model/{fill_file}",
-            "contour_file": f"model/{contour_file}",
+            "grid_file": f"{public_prefix}/{grid_file}",
+            "fill_file": f"{public_prefix}/{fill_file}",
+            "contour_file": f"{public_prefix}/{contour_file}",
             "range": [spec["vmin"], spec["vmax"]],
             "color_stops": color_stops(spec),
             "shape": [int(array.shape[0]), int(array.shape[1])],
@@ -334,14 +371,14 @@ def interactive_metadata(
             {
                 "id": f"{field_id}_fill", "field": field_id, "kind": "raster",
                 "label": f"{spec['label']} · colour", "group": "ICON-EU fields",
-                "file": f"model/{fill_file}", "bounds": raster_bounds,
+                "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
                 "default": bool(enabled.get("fill")), "opacity": 0.55,
                 "display_resampling": "bilinear_2x",
             },
             {
                 "id": f"{field_id}_contours", "field": field_id, "kind": "contours",
                 "label": f"{spec['label']} · isolines", "group": "ICON-EU fields",
-                "file": f"model/{contour_file}", "line_color": spec["line_color"],
+                "file": f"{public_prefix}/{contour_file}", "line_color": spec["line_color"],
                 "default": bool(enabled.get("contours")), "opacity": 0.9,
             },
         ])
@@ -351,7 +388,7 @@ def interactive_metadata(
     layers.append({
         "id": "wind_vectors", "field": "wind", "kind": "vectors",
         "label": "10 m wind · vectors", "group": "ICON-EU fields",
-        "file": f"model/{vectors_file}", "default": True, "opacity": 0.85,
+        "file": f"{public_prefix}/{vectors_file}", "default": True, "opacity": 0.85,
     })
     sat_west, sat_south, sat_east, sat_north = syn.BBOX
     satellite_bounds = [[sat_south, sat_west], [sat_north, sat_east]]
@@ -393,46 +430,102 @@ def main() -> int:
     parser.add_argument("--output", default="model/output")
     parser.add_argument("--background", default="satellite/output/geocolour.webp")
     parser.add_argument("--satellite-meta", default="satellite/output/latest.json")
+    parser.add_argument("--time-radius", type=int, default=1, help="Forecast steps before/after nearest current valid time")
     args = parser.parse_args()
+    if args.time_radius < 0 or args.time_radius > 4:
+        raise SystemExit("--time-radius must be between 0 and 4")
 
     now = datetime.now(timezone.utc)
-    run, lead, urls = discover_selection(now)
+    run, selections, current_index = discover_time_series(now, radius=args.time_radius)
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
     background = Path(args.background)
     if not background.exists():
         raise RuntimeError(f"Satellite background missing: {background}")
 
-    with tempfile.TemporaryDirectory(prefix="read-sensor-icon-") as temporary:
-        workdir = Path(temporary)
-        raw = {name: syn.open_grib(url, workdir) for name, url in urls.items()}
-
-    static_meta = syn.render(
-        raw["t_2m"], raw["pmsl"], raw["u_10m"], raw["v_10m"],
-        background, output_dir / "synoptic.webp", run, lead,
-    )
-    arrays, lats, lons = prepared_fields(raw)
-    static_meta["interactive"] = interactive_metadata(arrays, lats, lons, output_dir, run, lead)
-    static_meta["generated_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
+    satellite_observed_at = None
+    satellite_generated_at = None
     satellite_meta_path = Path(args.satellite_meta)
     if satellite_meta_path.exists():
         satellite_meta = json.loads(satellite_meta_path.read_text(encoding="utf-8"))
-        static_meta["satellite_observed_at"] = (
+        satellite_observed_at = (
             satellite_meta.get("products", {}).get("geocolour", {}) or {}
         ).get("observed_at")
-        static_meta["satellite_generated_at"] = satellite_meta.get("generated_at")
-        static_meta["interactive"]["satellite_observed_at"] = static_meta["satellite_observed_at"]
+        satellite_generated_at = satellite_meta.get("generated_at")
 
-    static_meta["files"] = urls
+    time_steps = []
+    current_raw = None
+    current_urls = None
+    current_lead = selections[current_index][0]
+    with tempfile.TemporaryDirectory(prefix="read-sensor-icon-") as temporary:
+        workdir = Path(temporary)
+        for index, (lead, urls) in enumerate(selections):
+            raw = {name: syn.open_grib(url, workdir) for name, url in urls.items()}
+            arrays, lats, lons = prepared_fields(raw)
+            step_key = f"f{lead:03d}"
+            step_dir = output_dir / "times" / step_key
+            step_dir.mkdir(parents=True, exist_ok=True)
+            step_meta = interactive_metadata(
+                arrays, lats, lons, step_dir, run, lead,
+                public_prefix=f"model/times/{step_key}",
+            )
+            step_meta["satellite_observed_at"] = satellite_observed_at
+            step_meta["dimensions"] = {
+                "time": {"forecast_hour": lead, "valid_at": step_meta["valid_at"]},
+                "horizontal": {"coordinates": ["latitude", "longitude"]},
+                "pressure_level_hpa": {"temperature": [850], "geopotential_height": [500]},
+            }
+            meta_file = step_dir / "meta.json"
+            meta_file.write_text(json.dumps(step_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            time_steps.append({
+                "forecast_hour": lead,
+                "valid_at": step_meta["valid_at"],
+                "meta_file": f"model/times/{step_key}/meta.json",
+            })
+            if index == current_index:
+                current_raw = raw
+                current_urls = urls
+                current_meta = step_meta
+
+        if current_raw is None or current_urls is None:
+            raise RuntimeError("Current multidimensional time step was not generated")
+        static_meta = syn.render(
+            current_raw["t_2m"], current_raw["pmsl"], current_raw["u_10m"], current_raw["v_10m"],
+            background, output_dir / "synoptic.webp", run, current_lead,
+        )
+
+    timeline = {
+        "version": 1,
+        "run_at": run.isoformat().replace("+00:00", "Z"),
+        "current_index": current_index,
+        "steps": time_steps,
+        "dimensions": {
+            "time": len(time_steps),
+            "field": len(DISPLAY_SPECS),
+            "latitude": int(current_meta["native_grid"]["shape"][0]),
+            "longitude": int(current_meta["native_grid"]["shape"][1]),
+        },
+        "policy": "previous / latest-valid-not-after-now / next complete valid time from one ICON-EU run",
+    }
+    (output_dir / "timeline.json").write_text(
+        json.dumps(timeline, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    current_meta["timeline_file"] = "model/timeline.json"
+    current_meta["timeline"] = timeline
+    static_meta["interactive"] = current_meta
+    static_meta["generated_at"] = now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    static_meta["satellite_observed_at"] = satellite_observed_at
+    static_meta["satellite_generated_at"] = satellite_generated_at
+    static_meta["files"] = current_urls
     (output_dir / "latest.json").write_text(
         json.dumps(static_meta, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     print(json.dumps({
         "run_at": static_meta["run_at"],
-        "forecast_hour": lead,
+        "forecast_hour": current_lead,
         "valid_at": static_meta["valid_at"],
+        "timeline_steps": [step["forecast_hour"] for step in time_steps],
         "interactive_fields": sorted(static_meta["interactive"]["fields"]),
         "interactive_layers": len(static_meta["interactive"]["layers"]),
     }, indent=2))

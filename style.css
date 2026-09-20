@@ -897,7 +897,7 @@ a { color: #58a6ff; }
 .satellite-about { margin-top:12px; padding:16px 18px; border:1px solid #30363d; border-radius:12px; background:#161b22; }
 .satellite-about h3 { margin:0 0 8px; font-size:1rem; }
 .satellite-about p { margin:0 0 14px; color:#8b949e; font-size:.82rem; line-height:1.5; }
-.satellite-about-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.satellite-about-grid { display:grid; grid-template-columns:1.15fr 1.55fr 1.15fr 1.15fr .85fr; gap:8px; }
 .satellite-about-grid > div { padding:10px 11px; border:1px solid #30363d; border-radius:8px; background:#0d1117; }
 .satellite-about-grid small,.satellite-about-grid strong { display:block; }
 .satellite-about-grid small { margin-bottom:4px; }
@@ -1360,6 +1360,21 @@ a { color: #58a6ff; }
   text-transform:uppercase;
   letter-spacing:.04em;
 }
+.icon-time-card select {
+  width:100%;
+  min-height:30px;
+  padding:4px 28px 4px 0;
+  border:0;
+  outline:none;
+  background:transparent;
+  color:#e6edf3;
+  font:inherit;
+  font-size:.84rem;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+  cursor:pointer;
+}
+.icon-time-card select:disabled { opacity:.6; cursor:progress; }
 .icon-map-meta strong {
   color:#e6edf3;
   font-size:.84rem;

@@ -101,8 +101,9 @@
 
           <div class="icon-map-meta">
             <span><small>Model run</small><strong id="iconMapRun">—</strong></span>
-            <span><small>Forecast</small><strong id="iconMapLead">—</strong></span>
+            <span class="icon-time-card"><small>Forecast / valid time</small><select id="iconForecastTime" aria-label="ICON-EU forecast valid time"><option>Loading…</option></select></span>
             <span><small>Valid</small><strong id="iconMapValid">—</strong></span>
+            <span><small>Satellite</small><strong id="iconMapSatellite">—</strong></span>
             <span><small>Native grid</small><strong id="iconMapGrid">—</strong></span>
           </div>
 
@@ -379,7 +380,7 @@
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
     <script src="app.js?v=icon-synoptic-2"></script>
-    <script src="model-map.js?v=icon-interactive-1"></script>
+    <script src="model-map.js?v=icon-time-dimension-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

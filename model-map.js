@@ -7,6 +7,10 @@
     instances: new Map(),
     grids: new Map(),
     rows: new Map(),
+    timeline: null,
+    currentStepIndex: 0,
+    layerPreferences: new Map(),
+    switchSerial: 0,
     initializing: null,
   };
 
@@ -20,6 +24,24 @@
       timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
       hour: "2-digit", minute: "2-digit", hour12: false,
     }).format(date) + " UTC";
+  }
+
+  function compactModelTime(value) {
+    const date = new Date(value || "");
+    if (Number.isNaN(date.getTime())) return "—";
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "UTC", day: "2-digit", month: "short",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(date) + " UTC";
+  }
+
+  function updateModelMetaCards() {
+    const meta = iconModelState.meta;
+    if (!meta) return;
+    iconEl("iconMapRun").textContent = modelTime(meta.run_at);
+    iconEl("iconMapValid").textContent = modelTime(meta.valid_at);
+    iconEl("iconMapSatellite").textContent = modelTime(meta.satellite_observed_at);
+    iconEl("iconMapGrid").textContent = `${meta.native_grid.spacing_degrees}°`;
   }
 
   function versioned(path) {
@@ -229,7 +251,8 @@
     label.className = "model-layer-toggle";
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.checked = Boolean(def.default);
+    const preference = iconModelState.layerPreferences.get(def.id);
+    checkbox.checked = preference?.enabled ?? Boolean(def.default);
     const name = document.createElement("span");
     name.textContent = def.label;
     label.append(checkbox, name);
@@ -244,13 +267,19 @@
     slider.min = "0";
     slider.max = "100";
     slider.step = "5";
-    slider.value = String(Math.round((def.opacity ?? 1) * 100));
+    slider.value = String(Math.round((preference?.opacity ?? def.opacity ?? 1) * 100));
     slider.className = "model-layer-opacity";
     slider.setAttribute("aria-label", `${def.label} opacity`);
 
-    checkbox.addEventListener("change", () => setLayerEnabled(def, checkbox.checked));
+    checkbox.addEventListener("change", () => {
+      const current = iconModelState.layerPreferences.get(def.id) || {};
+      iconModelState.layerPreferences.set(def.id, { ...current, enabled: checkbox.checked });
+      setLayerEnabled(def, checkbox.checked);
+    });
     slider.addEventListener("input", () => {
       opacityText.textContent = `${slider.value}%`;
+      const current = iconModelState.layerPreferences.get(def.id) || {};
+      iconModelState.layerPreferences.set(def.id, { ...current, opacity: Number(slider.value) / 100 });
       const instance = iconModelState.instances.get(def.id);
       if (instance) applyOpacity(instance, def);
     });
@@ -283,6 +312,70 @@
       container.append(group);
     }
   }
+  function captureLayerPreferences() {
+    for (const def of iconModelState.meta?.layers || []) {
+      const row = iconModelState.rows.get(def.id);
+      if (!row) continue;
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      const slider = row.querySelector('input[type="range"]');
+      iconModelState.layerPreferences.set(def.id, {
+        enabled: Boolean(checkbox?.checked),
+        opacity: slider ? Number(slider.value) / 100 : Number(def.opacity ?? 1),
+      });
+    }
+  }
+
+  function populateForecastTimeControl() {
+    const select = iconEl("iconForecastTime");
+    const timeline = iconModelState.timeline;
+    if (!select || !timeline?.steps?.length) return;
+    select.replaceChildren();
+    timeline.steps.forEach((step, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `+${step.forecast_hour} h · ${compactModelTime(step.valid_at)}`;
+      select.append(option);
+    });
+    select.value = String(iconModelState.currentStepIndex);
+  }
+
+  async function switchForecastTime(index) {
+    const timeline = iconModelState.timeline;
+    if (!timeline?.steps?.[index] || index === iconModelState.currentStepIndex) return;
+    const serial = ++iconModelState.switchSerial;
+    const select = iconEl("iconForecastTime");
+    if (select) select.disabled = true;
+    setMapStatus("Switching forecast time…");
+    captureLayerPreferences();
+    try {
+      const nextMeta = await fetchModelJson(timeline.steps[index].meta_file);
+      if (serial !== iconModelState.switchSerial) return;
+      for (const instance of iconModelState.instances.values()) {
+        if (iconModelState.map.hasLayer(instance)) iconModelState.map.removeLayer(instance);
+      }
+      iconModelState.instances.clear();
+      iconModelState.grids.clear();
+      iconModelState.rows.clear();
+      iconModelState.meta = nextMeta;
+      iconModelState.currentStepIndex = index;
+      updateModelMetaCards();
+      buildLayerPanel();
+      for (const def of nextMeta.layers) {
+        const row = iconModelState.rows.get(def.id);
+        if (row?.querySelector('input[type="checkbox"]')?.checked) {
+          await setLayerEnabled(def, true);
+        }
+      }
+      setMapStatus("Interactive fields ready", "ok");
+    } catch (error) {
+      console.error("icon_time_switch_failed", error);
+      setMapStatus("Could not switch forecast time", "warning");
+      if (select) select.value = String(iconModelState.currentStepIndex);
+    } finally {
+      if (select) select.disabled = false;
+    }
+  }
+
   async function loadGrid(fieldId) {
     if (iconModelState.grids.has(fieldId)) return iconModelState.grids.get(fieldId);
     const field = iconModelState.meta.fields[fieldId];
@@ -433,11 +526,12 @@
         const rootMeta = await response.json();
         if (!rootMeta.interactive) throw new Error("Interactive metadata missing");
         iconModelState.meta = rootMeta.interactive;
-
-        iconEl("iconMapRun").textContent = modelTime(rootMeta.interactive.run_at);
-        iconEl("iconMapLead").textContent = `+${rootMeta.interactive.forecast_hour} h`;
-        iconEl("iconMapValid").textContent = modelTime(rootMeta.interactive.valid_at);
-        iconEl("iconMapGrid").textContent = `${rootMeta.interactive.native_grid.spacing_degrees}°`;
+        iconModelState.timeline = rootMeta.interactive.timeline || null;
+        iconModelState.currentStepIndex = Number(iconModelState.timeline?.current_index ?? 0);
+        updateModelMetaCards();
+        populateForecastTimeControl();
+        const forecastSelect = iconEl("iconForecastTime");
+        forecastSelect?.addEventListener("change", () => switchForecastTime(Number(forecastSelect.value)));
 
         buildLayerPanel();
         const map = makeMap();

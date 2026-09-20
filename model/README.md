@@ -4,7 +4,7 @@
 - **Repository:** https://github.com/oliwertwister/read-sensor
 - **DWD ICON-EU GRIB2 source:** https://opendata.dwd.de/weather/nwp/icon-eu/grib/
 
-The model pipeline now produces both the compact static synoptic image and the interactive Leaflet products. `render_icon_products.py` is the scheduled entry point; it reuses `render_icon_synoptic.py` for the static product so core GRIB fields are not downloaded twice.
+The model pipeline now produces both the compact static synoptic image and a bounded multidimensional Leaflet product. `render_icon_products.py` is the scheduled entry point. Each build publishes three complete valid times from one ICON-EU run: the previous complete hour, the latest complete valid time not after the build clock, and the next complete hour. The browser switches all active numerical layers coherently across that time dimension.
 
 ## Current fields
 
@@ -39,7 +39,7 @@ DWD ICON-EU GRIB2
     -> Leaflet
 ```
 
-Dask is intentionally not used for this single-valid-time build. The selected arrays fit comfortably into memory on the standard GitHub-hosted runner. Dask becomes useful when the project starts processing many times/channels together or native FCI products large enough to benefit from chunked lazy computation.
+Dask is intentionally not used for the current three-valid-time build. Each valid time is loaded, transformed, written, and released sequentially, so peak memory remains close to one time slice. Dask becomes useful when the project expands to substantially larger time windows, many pressure levels, ensemble dimensions, or native FCI products large enough to benefit from chunked lazy computation.
 
 ## Interactive Leaflet outputs
 
