@@ -13,7 +13,7 @@ The project deliberately separates a static public frontend from data collection
 - **Sensors** — D1-backed telemetry with selectable latest-N or rolling-window history, optional 5/10/15/20/25-minute averaging, CSV export, a time-series chart, and a normalized temperature-distribution line plot.
 - **Berlin Weather** — current conditions from Open-Meteo.
 - **Aviation Weather** — worldwide station search, map selection, and METAR/TAF retrieval through the Aviation Weather Center Data API.
-- **DWD ICON-EU** — quantitative native-GRIB2 synoptic overlay (PMSL isobars, 2 m isotherms, 10 m wind) over the current MTG/FCI satellite background, plus official DWD reference charts.
+- **DWD ICON-EU** — interactive Leaflet field explorer plus a static synoptic overlay. The map provides independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields are T2M, PMSL, RH2M, total cloud cover, accumulated precipitation, T850, Z500, and 10 m wind.
 - **SYNOP** — worldwide WMO station search plus a recent-report map assembled from DWD SYNOP feeds; selected raw `AAXX` reports are decoded in the browser when available.
 - **Satellite** — EUMETSAT EUMETView WMS imagery for MTG/FCI, rendered autonomously with a coordinate grid, country boundaries, and Berlin marker.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid and local geometry loading.
@@ -40,17 +40,26 @@ This distinction matters: the WMS path is appropriate for a zero-cost visual das
 
 ## Numerical model analysis path
 
-The first quantitative ICON-EU pipeline is now implemented in [`model/render_icon_synoptic.py`](model/render_icon_synoptic.py); details are in [`model/README.md`](model/README.md). It uses native DWD ICON-EU regular-lat/lon GRIB2 fields rather than extracting values from rendered charts. The current processing stack is:
+The quantitative ICON-EU build is orchestrated by [`model/render_icon_products.py`](model/render_icon_products.py), with the compact static renderer retained in [`model/render_icon_synoptic.py`](model/render_icon_synoptic.py). Details are in [`model/README.md`](model/README.md). The pipeline uses native DWD ICON-EU regular-lat/lon GRIB2 fields rather than extracting values from rendered charts.
 
 1. discover the freshest complete ICON-EU run/lead combination;
-2. download only `t_2m`, `pmsl`, `u_10m`, and `v_10m`;
+2. download the required surface and pressure-level fields once per build;
 3. decode GRIB2 with **ecCodes/cfgrib** into **xarray** arrays;
-4. normalize longitude coordinates and subset the Europe display extent;
-5. convert temperature and pressure to display units;
-6. contour PMSL and temperature directly on the regular model grid and thin wind vectors for display;
-7. rasterize the derived overlay onto the current satellite background.
+4. normalize coordinates and subset the Europe domain;
+5. derive display units and 10 m wind speed;
+6. export independent transparent WebP colour rasters, GeoJSON isolines, GeoJSON wind vectors, and native Float32 grids for point queries;
+7. generate the legacy compact satellite + isobar/isotherm/wind static synoptic product from the same build;
+8. let Leaflet compose the interactive layers in the browser rather than flattening them into one image.
 
-**Dask is not used yet** because this four-field single-step workload fits comfortably in memory. It remains appropriate for later multi-file/multi-time native satellite or model workflows.
+**Dask is not used yet** because the current single-valid-time, Europe-subset workload still fits comfortably in memory. It remains appropriate for later multi-time native FCI/model workflows where lazy loading and chunked computation materially reduce memory pressure.
+
+### Interactive field explorer and map engine
+
+The interactive model viewer intentionally remains on **Leaflet** for now. Its current requirements—georeferenced image overlays, GeoJSON contours and vectors, opacity controls, pan/zoom, and point interrogation—fit Leaflet well and reuse the mapping stack already shipped by this project. Moving only this tab to OpenLayers would add a second map engine without a present technical necessity.
+
+A move to **OpenLayers** becomes attractive if the browser starts doing substantial numerical-raster work itself: client-side reprojection, WebGL raster expressions, many simultaneously animated time slices, large Cloud-Optimized GeoTIFFs, or GPU-heavy multidimensional styling. Until then the architecture keeps the map-library boundary clean so the backend products can be consumed by either engine.
+
+The Satpy upgrade is designed to plug into the same layer catalogue. Native MTG/FCI Level-1c channels would be read through Satpy, calibrated/resampled with Satpy/pyresample, and published as additional georeferenced rasters plus queryable numerical grids. The current EUMETView WMS imagery remains a lightweight fallback/background until native FCI access and licensing are resolved.
 
 This supports real meteorological plotting such as:
 

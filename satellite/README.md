@@ -12,7 +12,7 @@ The current renderer is **not a Satpy pipeline**. It uses EUMETSAT **EUMETView W
 - `mtg_fd:rgb_geocolour` — MTG/FCI Geo Colour RGB;
 - `mtg_fd:ir105_hrfi` — MTG/FCI 10.5 µm thermal-infrared visual product.
 
-`render_satellite.py` requests a PNG in `CRS:84` for 25°W–45°E / 30°N–72°N, then uses Pillow to add:
+`render_satellite.py` requests a PNG in `CRS:84` for 25°W–45°E / 30°N–72°N. It now preserves a clean georeferenced WebP for the interactive Leaflet map and separately uses Pillow to create the decorated Satellite-tab product with:
 
 - WGS84 latitude/longitude grid;
 - Natural Earth 1:50m Admin-0 country boundaries;
@@ -51,7 +51,9 @@ Satpy + pyresample to Europe target grid
         ↓
 xarray / Dask-backed DataArrays as needed
         ↓
-small derived WebP/PNG/GeoTIFF/JSON products
+georeferenced display rasters + compact numerical query grids + metadata
+        ↓
+the same interactive Leaflet layer catalogue used by ICON-EU
         ↓
 GitHub Pages
 ```
@@ -70,7 +72,7 @@ For this project the preferred sequence is:
 4. compute only the derived arrays needed for the published images;
 5. discard native input files when the job finishes.
 
-Dask becomes more valuable when multiple large NetCDF chunks or channels no longer fit comfortably in memory. It is unnecessary for the current WMS/Pillow renderer.
+Dask becomes more valuable when multiple large NetCDF chunks or channels no longer fit comfortably in memory. It is unnecessary for the current WMS/Pillow renderer. Once native FCI arrays are available, calibrated channel values can be published into the same click-query/opacity/layer workflow now used by the interactive ICON-EU Leaflet map.
 
 ## Numerical weather models: separate from Satpy
 

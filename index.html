@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=icon-synoptic-1">
+    <link rel="stylesheet" href="style.css?v=icon-interactive-1">
   </head>
   <body>
     <header>
@@ -89,6 +89,47 @@
             <p class="muted">Native GRIB2 analysis + official DWD reference charts</p>
           </div>
         </div>
+
+        <section class="icon-interactive" aria-labelledby="iconInteractiveTitle">
+          <div class="icon-interactive-heading">
+            <div>
+              <h3 id="iconInteractiveTitle">Interactive weather fields</h3>
+              <p class="muted">Leaflet · independent raster, isoline, wind and satellite layers · click the map to query model values</p>
+            </div>
+            <span id="iconMapStatus" class="status">Open this tab to load map</span>
+          </div>
+
+          <div class="icon-map-meta">
+            <span><small>Model run</small><strong id="iconMapRun">—</strong></span>
+            <span><small>Forecast</small><strong id="iconMapLead">—</strong></span>
+            <span><small>Valid</small><strong id="iconMapValid">—</strong></span>
+            <span><small>Native grid</small><strong id="iconMapGrid">—</strong></span>
+          </div>
+
+          <div class="icon-map-workspace">
+            <aside class="icon-layer-panel" aria-label="ICON-EU map layers">
+              <div class="icon-layer-tools">
+                <label for="iconSampling">Point sampling
+                  <select id="iconSampling">
+                    <option value="bilinear" selected>Bilinear</option>
+                    <option value="nearest">Nearest grid point</option>
+                  </select>
+                </label>
+                <button id="iconMapReset" type="button">Fit Europe</button>
+              </div>
+              <div id="iconLayerList" class="icon-layer-list">
+                <p class="muted">Layer catalogue loads with the map.</p>
+              </div>
+            </aside>
+
+            <div class="icon-map-stage">
+              <div id="iconInteractiveMap" aria-label="Interactive ICON-EU weather map"></div>
+              <div id="iconMapCursor" class="icon-map-cursor">Move over map to inspect coordinates</div>
+            </div>
+          </div>
+
+          <p class="muted icon-map-note">Colour layers are display rasters; click queries read the underlying ICON-EU Float32 grids. Bilinear sampling interpolates between native grid points and does not create additional model resolution.</p>
+        </section>
 
         <section class="icon-derived" aria-labelledby="iconDerivedTitle">
           <div class="icon-derived-heading">
@@ -337,7 +378,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=icon-synoptic-1"></script>
+    <script src="app.js?v=icon-synoptic-2"></script>
+    <script src="model-map.js?v=icon-interactive-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

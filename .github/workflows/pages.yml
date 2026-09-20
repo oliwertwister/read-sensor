@@ -43,6 +43,7 @@ jobs:
         if: github.event_name == 'push' || inputs.satellite_only != true
         run: |
           node --check app.js
+          node --check model-map.js
           node --check config.js
           node --check geometry-loader.js
           node --check geometry-ui.js
@@ -70,13 +71,13 @@ jobs:
       - name: Render latest Meteosat products
         run: python satellite/render_satellite.py --output satellite/output
 
-      - name: Render quantitative ICON-EU synoptic product
-        run: python model/render_icon_synoptic.py --output model/output --background satellite/output/geocolour.webp
+      - name: Render quantitative ICON-EU static and interactive products
+        run: python model/render_icon_products.py --output model/output --background satellite/output/geocolour.webp
 
       - name: Stage public files
         run: |
           mkdir _site
-          cp index.html app.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
+          cp index.html app.js model-map.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
           cp -R vendor _site/
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/

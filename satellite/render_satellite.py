@@ -184,11 +184,16 @@ def main() -> None:
         observed_at = times.get(key)
         if not observed_at:
             raise RuntimeError(f"No current time advertised for {cfg['layer']}")
-        image = decorate(wms_image(cfg["layer"], observed_at), countries)
+        raw_image = wms_image(cfg["layer"], observed_at)
+        raw_filename = f"{key}-raw.webp"
+        raw_image.save(output / raw_filename, "WEBP", quality=88, method=6)
+
+        image = decorate(raw_image, countries)
         filename = f"{key}.webp"
         image.save(output / filename, "WEBP", quality=88, method=6)
         metadata["products"][key] = {
             "file": filename,
+            "raw_file": raw_filename,
             "layer": cfg["layer"],
             "title": cfg["title"],
             "subtitle": cfg["subtitle"],
