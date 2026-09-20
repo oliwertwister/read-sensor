@@ -300,6 +300,20 @@ test("telemetry retention is hard-capped at 30 days", async () => {
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM readings").get().count, 0);
 });
 
+test("model upload bearer parser accepts JWT shape without weakening ingest tokens", async () => {
+  const fakeJwt = `${"a".repeat(48)}.${"b".repeat(320)}.${"c".repeat(86)}`;
+  const cubeEnv = { ...env, MODEL_CUBE: new R2Bucket() };
+  const response = await worker.fetch(request("/api/v1/model-cube-upload-auth-check", {
+    method: "POST",
+    headers: { authorization: `Bearer ${fakeJwt}` },
+  }), cubeEnv);
+  assert.equal(response.status, 401);
+  const diagnostic = await response.json();
+  assert.notEqual(diagnostic.reason, "missing_bearer");
+  const ingest = await worker.fetch(ingestRequest({}, fakeJwt), env);
+  assert.equal(ingest.status, 401);
+});
+
 test("model cube routes fail closed without R2 bindings", async () => {
   const read = await worker.fetch(request("/api/v1/model-cube/latest.json"), env);
   assert.equal(read.status, 503);

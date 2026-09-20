@@ -61,6 +61,19 @@ function bearerToken(request) {
   return match?.[1] || null;
 }
 
+function modelBearerToken(request) {
+  const match = /^Bearer ([A-Za-z0-9_.-]{32,8192})$/.exec(
+    request.headers.get("authorization") || "",
+  );
+  const token = match?.[1] || null;
+  if (!token) return null;
+  if (token.includes(".")) {
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part))) return null;
+  }
+  return token;
+}
+
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -665,7 +678,7 @@ async function githubOidcAuthorized(token, env) {
 }
 
 async function modelUploadAuthCheck(request, env) {
-  const supplied = bearerToken(request);
+  const supplied = modelBearerToken(request);
   if (!supplied) return json(request, env, { ok: false, reason: "missing_bearer" }, 401);
   if (supplied.split(".").length !== 3) {
     const ok = await modelUploadAuthorized(request, env);
@@ -680,7 +693,7 @@ async function modelUploadAuthCheck(request, env) {
 }
 
 async function modelUploadAuthorized(request, env) {
-  const supplied = bearerToken(request);
+  const supplied = modelBearerToken(request);
   if (!supplied) return false;
   if (supplied.split(".").length === 3) {
     try {
