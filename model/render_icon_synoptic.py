@@ -167,7 +167,7 @@ def render(
     ax.imshow(image, extent=[west, east, south, north], origin="upper", aspect="auto", zorder=0)
 
     pressure_levels = levels_covering(float(np.nanpercentile(pp, 1)), float(np.nanpercentile(pp, 99)), 4.0)
-    temp_levels = levels_covering(float(np.nanpercentile(tt, 2)), float(np.nanpercentile(tt, 98)), 5.0)
+    temp_levels = levels_covering(float(np.nanpercentile(tt, 2)), float(np.nanpercentile(tt, 98)), 2.0)
 
     pressure = ax.contour(lons, lats, pp, levels=pressure_levels, linewidths=1.3, colors="white", alpha=0.95, zorder=4)
     pressure_labels = ax.clabel(
@@ -189,7 +189,7 @@ def render(
     )
     temperature_labels = ax.clabel(
         temperature, inline=True, inline_spacing=5, fontsize=8, colors="black",
-        fmt=lambda value: f"{value:.0f}°C",
+        fmt=lambda value: f"{value:.1f} degrees_celsius",
     )
     for text in temperature_labels:
         text.set_bbox({"facecolor": "white", "edgecolor": "none", "alpha": 0.72, "pad": 0.5})
@@ -237,7 +237,7 @@ def render(
         "bbox": list(BBOX),
         "grid_spacing_degrees": float(abs(np.median(np.diff(lons)))),
         "pressure_contour_interval_hpa": 4,
-        "temperature_contour_interval_degrees_celsius": 5,
+        "temperature_contour_interval_degrees_celsius": 2,
         "wind_vector_spacing_degrees_approx": 2,
         "source": "DWD ICON-EU regular-lat-lon GRIB2",
         "background": "EUMETSAT EUMETView MTG/FCI Geo Colour",

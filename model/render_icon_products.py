@@ -40,8 +40,8 @@ FILE_RE = re.compile(
 
 DISPLAY_SPECS = {
     "t2m": {
-        "label": "2 m temperature", "unit": "°C", "cmap": "coolwarm",
-        "vmin": -20.0, "vmax": 40.0, "contours": list(np.arange(-40, 46, 5)),
+        "label": "2 m temperature", "unit": "degrees_celsius", "cmap": "coolwarm",
+        "vmin": -20.0, "vmax": 40.0, "contours": list(np.arange(-40, 42, 2)),
         "line_color": "#101010", "decimals": 1,
     },
     "pmsl": {
@@ -65,7 +65,7 @@ DISPLAY_SPECS = {
         "line_color": "#1261a0", "decimals": 1,
     },
     "t850": {
-        "label": "850 hPa temperature", "unit": "°C", "cmap": "coolwarm",
+        "label": "850 hPa temperature", "unit": "degrees_celsius", "cmap": "coolwarm",
         "vmin": -30.0, "vmax": 30.0, "contours": list(np.arange(-40, 36, 5)),
         "line_color": "#6d1f1f", "decimals": 1,
     },
@@ -235,7 +235,7 @@ def contour_geojson(
                     "properties": {
                         "level": float(level),
                         "label": index == 0,
-                        "text": f"{level:g} {spec['unit']}",
+                        "text": f"{level:.{spec['decimals']}f} {spec['unit']}",
                     },
                     "geometry": {"type": "LineString", "coordinates": coords},
                 })

@@ -17,7 +17,7 @@ The build discovers the freshest complete regular-lat/lon run and chooses the fo
 - `CLCT` - total cloud cover;
 - `TOT_PREC` - accumulated precipitation from model initialization to valid time;
 - pressure-level `T` at 850 hPa - K to deg C;
-- pressure-level `FI` at 500 hPa - geopotential converted to geopotential height in decametres.
+- pressure-level `FI` at 500 hPa - geopotential converted to geopotential height in decametres (`dam`), with one-decimal value precision in the interactive query display.
 
 The selected regular-lat/lon product currently has 0.0625 degree grid spacing over the useful ICON-EU domain. Longitudes are normalized to -180..180 and latitude rows are stored north-to-south for browser raster alignment.
 
@@ -63,7 +63,7 @@ The initial interactive stack is:
 
 - MTG/FCI Geo Colour background;
 - 2 m temperature colour raster;
-- 2 m temperature 5 deg C isolines;
+- 2 m temperature 2 `degrees_celsius` isolines, labelled to one decimal place;
 - PMSL 4 hPa isobars;
 - thinned 10 m wind vectors.
 
@@ -71,7 +71,7 @@ Other generated fields are loaded only when the user enables them, so large cont
 
 ## Static synoptic product
 
-`render_icon_synoptic.py` still generates `synoptic.webp` for a compact overview with white PMSL isobars every 4 hPa, black 2 m isotherms every 5 deg C, white 10 m wind arrows, and the current MTG/FCI Geo Colour raster background. The static image and interactive layers use the same selected ICON run/lead.
+`render_icon_synoptic.py` still generates `synoptic.webp` for a compact overview with white PMSL isobars every 4 hPa, black 2 m isotherms every 2 `degrees_celsius`, white 10 m wind arrows, and the current MTG/FCI Geo Colour raster background. The static image and interactive layers use the same selected ICON run/lead.
 
 ## Why Leaflet remains the map engine
 

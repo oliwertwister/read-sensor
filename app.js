@@ -1135,7 +1135,7 @@ async function loadIconSynoptic() {
     $("iconValidTime").textContent = iconTime(meta.valid_at);
     $("iconSatelliteTime").textContent = iconTime(meta.satellite_observed_at);
     $("iconGridSpacing").textContent = meta.grid_spacing_degrees == null ? "—" : `${meta.grid_spacing_degrees}°`;
-    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 5} °C · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
+    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 2} degrees_celsius · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
     const valid = new Date(meta.valid_at || "");
     const deltaMinutes = Number.isNaN(valid.getTime()) ? NaN : Math.round((valid.getTime() - Date.now()) / 60000);
     const absMinutes = Math.abs(deltaMinutes);
