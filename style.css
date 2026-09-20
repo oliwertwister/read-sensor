@@ -1565,6 +1565,7 @@ a { color: #58a6ff; }
 @media(max-width:620px){
   .icon-interactive-heading { flex-direction:column; }
   .icon-map-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .icon-map-meta > span:last-child { grid-column:1 / -1; }
   .icon-layer-tools { grid-template-columns:1fr; }
   .icon-map-stage, #iconInteractiveMap { min-height:500px; height:500px; }
 }
