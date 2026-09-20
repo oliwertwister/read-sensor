@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=icon-pressure-wind-rh-1">
+    <link rel="stylesheet" href="style.css?v=icon-animation-1">
   </head>
   <body>
     <header>
@@ -122,6 +122,17 @@
               </select>
             </label>
             <button id="iconMapReset" type="button">Fit Europe</button>
+            <div class="icon-animation-controls" aria-label="Forecast animation">
+              <button id="iconAnimPlay" type="button" aria-label="Play forecast animation">▶ Play</button>
+              <input id="iconAnimRange" type="range" min="0" max="0" step="1" value="0" aria-label="Forecast animation time">
+              <strong id="iconAnimTime">—</strong>
+              <select id="iconAnimSpeed" aria-label="Animation speed">
+                <option value="1800">0.5×</option>
+                <option value="1000" selected>1×</option>
+                <option value="550">2×</option>
+              </select>
+              <label class="icon-anim-loop"><input id="iconAnimLoop" type="checkbox" checked> Loop</label>
+            </div>
           </div>
 
           <div class="icon-map-workspace">
@@ -389,7 +400,7 @@
     <script src="geometry-ui.js?v=geometry-4"></script>
     <script src="app.js?v=icon-synoptic-2"></script>
     <script src="cube-storage.js?v=zarr-r2-prototype-1"></script>
-    <script src="model-map.js?v=icon-pressure-wind-rh-1"></script>
+    <script src="model-map.js?v=icon-animation-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

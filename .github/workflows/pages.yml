@@ -95,6 +95,17 @@ jobs:
           mkdir -p _site/synop
           cp synop/stations.json _site/synop/latest.json
           cp synop/output/live.json _site/synop/live.json
+      - name: Guard free-tier storage limits
+        run: |
+          test ! -d _site/model/cube.zarr || { echo "Refusing to publish Zarr cube to GitHub Pages"; exit 1; }
+          SITE_KIB=$(du -sk _site | awk '{print $1}')
+          MAX_SITE_KIB=$((500 * 1024))
+          echo "Staged Pages size: $((SITE_KIB / 1024)) MiB / 500 MiB project safety ceiling"
+          if [ "$SITE_KIB" -gt "$MAX_SITE_KIB" ]; then
+            echo "Refusing deployment: staged site exceeds 500 MiB safety ceiling"
+            exit 1
+          fi
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 

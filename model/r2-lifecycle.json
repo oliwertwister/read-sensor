@@ -1,0 +1,12 @@
+{
+  "rules": [
+    {
+      "id": "expire-model-cubes-14d",
+      "enabled": true,
+      "conditions": { "prefix": "" },
+      "deleteObjectsTransition": {
+        "condition": { "type": "Age", "maxAge": 1209600 }
+      }
+    }
+  ]
+}

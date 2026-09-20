@@ -7,10 +7,15 @@ import concurrent.futures
 import json
 import mimetypes
 import os
+from datetime import datetime
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+MAX_RUN_BYTES = 120 * 1024 * 1024
+MAX_OBJECTS_PER_RUN = 2000
+STANDARD_RUN_HOURS = {0, 6, 12, 18}
 
 
 def put(url: str, token: str, path: str, data: bytes, content_type: str) -> tuple[str, int]:
@@ -26,6 +31,34 @@ def put(url: str, token: str, path: str, data: bytes, content_type: str) -> tupl
     except HTTPError as error:
         body = error.read().decode("utf-8", errors="replace")[:500]
         raise RuntimeError(f"Upload failed for {path}: HTTP {error.code}: {body}") from error
+
+
+def read_prefix(upload_url: str) -> str:
+    marker = "/api/v1/model-cube-upload"
+    if marker not in upload_url:
+        raise RuntimeError("MODEL_CUBE_UPLOAD_URL must use the Worker model-cube-upload route")
+    return upload_url.replace(marker, "/api/v1/model-cube", 1).rstrip("/")
+
+
+def get_latest(upload_url: str) -> dict | None:
+    request = Request(read_prefix(upload_url) + "/latest.json", headers={
+        "User-Agent": "read-sensor-zarr-publisher/1.0",
+        "Cache-Control": "no-cache",
+    })
+    try:
+        with urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except HTTPError as error:
+        if error.code == 404:
+            return None
+        raise RuntimeError(f"Could not read R2 latest pointer: HTTP {error.code}") from error
+
+
+def validate_run(manifest: dict) -> datetime:
+    run = datetime.fromisoformat(str(manifest["run_at"]).replace("Z", "+00:00"))
+    if run.minute or run.second or run.microsecond or run.hour not in STANDARD_RUN_HOURS:
+        raise RuntimeError(f"Refusing non-standard ICON run timestamp: {manifest['run_at']}")
+    return run
 
 
 def content_type(path: Path) -> str:
@@ -52,8 +85,12 @@ def main() -> int:
     if not cube.is_dir() or not manifest_path.is_file():
         raise SystemExit("Zarr cube or manifest missing")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    run_key = manifest["run_at"].replace("-", "").replace(":", "").replace("Z", "Z")
-    run_key = run_key.replace("T", "T")
+    validate_run(manifest)
+    latest = get_latest(base_url)
+    if latest and latest.get("run_at") == manifest.get("run_at"):
+        print(f"Zarr R2 upload skipped: run {manifest['run_at']} is already published")
+        return 0
+    run_key = manifest["run_at"].replace("-", "").replace(":", "")
 
     objects: list[tuple[str, Path]] = []
     for path in cube.rglob("*"):
@@ -63,7 +100,17 @@ def main() -> int:
     objects.append((f"runs/{run_key}/cube-manifest.json", manifest_path))
 
     total_bytes = sum(path.stat().st_size for _, path in objects)
-    print(f"Uploading {len(objects)} immutable objects / {total_bytes / 1024 / 1024:.1f} MiB for {run_key}")
+    if len(objects) > MAX_OBJECTS_PER_RUN:
+        raise RuntimeError(f"Refusing {len(objects)} objects; per-run safety limit is {MAX_OBJECTS_PER_RUN}")
+    if total_bytes > MAX_RUN_BYTES:
+        raise RuntimeError(
+            f"Refusing {total_bytes / 1024 / 1024:.1f} MiB cube; "
+            f"per-run safety limit is {MAX_RUN_BYTES / 1024 / 1024:.0f} MiB"
+        )
+    print(
+        f"Uploading {len(objects)} immutable objects / {total_bytes / 1024 / 1024:.1f} MiB for {run_key}; "
+        "14-day lifecycle safety budget <= 6.6 GiB at four runs/day"
+    )
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(args.workers, 16))) as pool:
         futures = [pool.submit(put, base_url, token, key, path.read_bytes(), content_type(path)) for key, path in objects]
         for future in concurrent.futures.as_completed(futures):

@@ -4,6 +4,7 @@ const DEFAULT_HISTORY_LIMIT = 288;
 const MAX_HISTORY_LIMIT = 10000;
 const MAX_BODY_BYTES = 4096;
 const DEFAULT_RETENTION_DAYS = 30;
+const MAX_RETENTION_DAYS = 30;
 const GITHUB_API_VERSION = "2026-03-10";
 const MODEL_CUBE_READ_PREFIX = "/api/v1/model-cube/";
 const MODEL_CUBE_UPLOAD_PREFIX = "/api/v1/model-cube-upload/";
@@ -68,10 +69,8 @@ async function sha256Hex(value) {
 
 function retentionDays(env) {
   const configured = Number(env.RETENTION_DAYS);
-  if (!Number.isInteger(configured) || configured < 1 || configured > 365) {
-    return DEFAULT_RETENTION_DAYS;
-  }
-  return configured;
+  if (!Number.isInteger(configured) || configured < 1) return DEFAULT_RETENTION_DAYS;
+  return Math.min(configured, MAX_RETENTION_DAYS);
 }
 
 function normalizedTimestamp(value, env) {
@@ -83,6 +82,14 @@ function normalizedTimestamp(value, env) {
   const oldest = now - retentionDays(env) * 24 * 60 * 60 * 1000;
   if (timestamp < oldest || timestamp > now + 5 * 60 * 1000) return null;
   return new Date(timestamp).toISOString();
+}
+
+async function pruneExpiredReadings(env, now = Date.now()) {
+  const cutoff = new Date(now - retentionDays(env) * 24 * 60 * 60 * 1000).toISOString();
+  const result = await env.DB.prepare(
+    "DELETE FROM readings WHERE recorded_at < ?",
+  ).bind(cutoff).run();
+  return { cutoff, changes: result.meta?.changes || 0 };
 }
 
 async function parseIngestBody(request) {
@@ -680,11 +687,15 @@ export default {
     }
   },
   async scheduled(controller, env) {
+    const cleanup = await pruneExpiredReadings(env, controller.scheduledTime);
     const result = await dispatchSatelliteRefresh(env);
     console.log(JSON.stringify({
-      event: "satellite_refresh_dispatched",
+      event: "scheduled_maintenance",
       cron: controller.cron,
       scheduled_time: new Date(controller.scheduledTime).toISOString(),
+      telemetry_retention_days: retentionDays(env),
+      telemetry_pruned: cleanup.changes,
+      telemetry_cutoff: cleanup.cutoff,
       github_status: result.status,
     }));
   },

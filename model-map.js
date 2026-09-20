@@ -12,6 +12,9 @@
     selectedPressureLevel: null,
     layerPreferences: new Map(),
     switchSerial: 0,
+    animationPlaying: false,
+    animationTimer: null,
+    animationSerial: 0,
     cubeState: null,
     initializing: null,
   };
@@ -368,6 +371,81 @@
     }
   }
 
+  function updateAnimationControls() {
+    const timeline = iconModelState.timeline;
+    const play = iconEl("iconAnimPlay");
+    const range = iconEl("iconAnimRange");
+    const label = iconEl("iconAnimTime");
+    if (!timeline?.steps?.length) {
+      if (play) play.disabled = true;
+      if (range) range.disabled = true;
+      if (label) label.textContent = "—";
+      return;
+    }
+    const step = timeline.steps[iconModelState.currentStepIndex];
+    if (play) {
+      play.disabled = timeline.steps.length < 2;
+      play.textContent = iconModelState.animationPlaying ? "❚❚ Pause" : "▶ Play";
+      play.setAttribute("aria-label", iconModelState.animationPlaying ? "Pause forecast animation" : "Play forecast animation");
+    }
+    if (range) {
+      range.disabled = timeline.steps.length < 2;
+      range.max = String(Math.max(0, timeline.steps.length - 1));
+      range.value = String(iconModelState.currentStepIndex);
+    }
+    if (label) label.textContent = `+${step.forecast_hour} h · ${compactModelTime(step.valid_at)}`;
+  }
+
+  function stopAnimation() {
+    iconModelState.animationPlaying = false;
+    iconModelState.animationSerial += 1;
+    if (iconModelState.animationTimer !== null) {
+      clearTimeout(iconModelState.animationTimer);
+      iconModelState.animationTimer = null;
+    }
+    updateAnimationControls();
+  }
+
+  function animationDelay() {
+    const value = Number(iconEl("iconAnimSpeed")?.value);
+    return Number.isFinite(value) && value >= 250 ? value : 1000;
+  }
+
+  async function animationTick(serial) {
+    if (!iconModelState.animationPlaying || serial !== iconModelState.animationSerial) return;
+    const steps = iconModelState.timeline?.steps || [];
+    if (steps.length < 2) {
+      stopAnimation();
+      return;
+    }
+    let next = iconModelState.currentStepIndex + 1;
+    if (next >= steps.length) {
+      if (!iconEl("iconAnimLoop")?.checked) {
+        stopAnimation();
+        return;
+      }
+      next = 0;
+    }
+    await switchForecastTime(next, { fromAnimation: true });
+    if (!iconModelState.animationPlaying || serial !== iconModelState.animationSerial) return;
+    iconModelState.animationTimer = setTimeout(() => animationTick(serial), animationDelay());
+  }
+
+  function startAnimation() {
+    const steps = iconModelState.timeline?.steps || [];
+    if (steps.length < 2 || iconModelState.animationPlaying) return;
+    iconModelState.animationPlaying = true;
+    iconModelState.animationSerial += 1;
+    const serial = iconModelState.animationSerial;
+    updateAnimationControls();
+    iconModelState.animationTimer = setTimeout(() => animationTick(serial), 150);
+  }
+
+  function toggleAnimation() {
+    if (iconModelState.animationPlaying) stopAnimation();
+    else startAnimation();
+  }
+
   function populateForecastTimeControl() {
     const select = iconEl("iconForecastTime");
     const timeline = iconModelState.timeline;
@@ -380,11 +458,17 @@
       select.append(option);
     });
     select.value = String(iconModelState.currentStepIndex);
+    updateAnimationControls();
   }
 
-  async function switchForecastTime(index) {
+  async function switchForecastTime(index, options = {}) {
     const timeline = iconModelState.timeline;
-    if (!timeline?.steps?.[index] || index === iconModelState.currentStepIndex) return;
+    if (!options.fromAnimation) stopAnimation();
+    if (!timeline?.steps?.[index]) return;
+    if (index === iconModelState.currentStepIndex) {
+      updateAnimationControls();
+      return;
+    }
     const serial = ++iconModelState.switchSerial;
     const select = iconEl("iconForecastTime");
     if (select) select.disabled = true;
@@ -402,6 +486,7 @@
       iconModelState.meta = nextMeta;
       iconModelState.currentStepIndex = index;
       updateModelMetaCards();
+      updateAnimationControls();
       populatePressureControl();
       buildLayerPanel();
       for (const def of nextMeta.layers) {
@@ -417,6 +502,7 @@
       if (select) select.value = String(iconModelState.currentStepIndex);
     } finally {
       if (select) select.disabled = false;
+      updateAnimationControls();
     }
   }
 
@@ -597,6 +683,14 @@
         populatePressureControl();
         const forecastSelect = iconEl("iconForecastTime");
         forecastSelect?.addEventListener("change", () => switchForecastTime(Number(forecastSelect.value)));
+        iconEl("iconAnimPlay")?.addEventListener("click", toggleAnimation);
+        iconEl("iconAnimRange")?.addEventListener("change", (event) => switchForecastTime(Number(event.target.value)));
+        iconEl("iconAnimSpeed")?.addEventListener("change", () => {
+          if (!iconModelState.animationPlaying) return;
+          const serial = iconModelState.animationSerial;
+          if (iconModelState.animationTimer !== null) clearTimeout(iconModelState.animationTimer);
+          iconModelState.animationTimer = setTimeout(() => animationTick(serial), animationDelay());
+        });
         const pressureSelect = iconEl("iconPressureLevel");
         pressureSelect?.addEventListener("change", () => switchPressureLevel(pressureSelect.value));
 

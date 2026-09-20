@@ -81,6 +81,25 @@ The target backend is **Cloudflare R2** behind the existing Worker. The Worker n
 
 The current Cloudflare OAuth login on the development Mac has expired, so the R2 bucket/binding and upload secret are **not yet provisioned**. Until a normal Wrangler re-login is completed, the existing Pages-based raster/GeoJSON path remains authoritative and the R2 gateway fails closed. The full `cube.zarr/` directory is explicitly removed from the Pages artifact, so this prototype does not increase published-site storage.
 
+
+## Storage and free-tier guardrails
+
+The project intentionally fails closed before storing excessive data. Current hard policy:
+
+| Resource | Project policy | Guardrail |
+| --- | --- | --- |
+| D1 telemetry | 30 days maximum | Worker clamps `RETENTION_DAYS` to 30 and scheduled maintenance globally prunes older rows |
+| R2 ICON cubes | 14 days maximum | `model/r2-lifecycle.json` expires the bucket; publisher accepts only 00/06/12/18 UTC runs |
+| R2 per-run cube | 120 MiB maximum | publisher refuses larger runs |
+| R2 objects per run | 2,000 maximum | publisher refuses larger object counts |
+| R2 duplicate runs | never re-upload | publisher checks `latest.json` and skips an already published run |
+| GitHub Pages staged site | 500 MiB maximum | workflow refuses deployment above this safety ceiling |
+| Zarr on GitHub Pages | prohibited | workflow fails if `_site/model/cube.zarr` exists |
+
+At the four standard ICON run hours per day, the 120 MiB per-run cap and 14-day R2 lifecycle bound retained cube storage to about 6.6 GiB before small metadata overhead, leaving margin below R2 Standard's 10 GB-month free allowance. The bucket must remain **Standard** storage; Infrequent Access is not used.
+
+Forecast animation is generated client-side from the existing model time dimension. It does not save rendered frame sequences, GIFs, or videos on the server.
+
 ## Cost-free compute constraints
 
 The repository is public, so standard GitHub-hosted Actions runners are currently free for public repositories. The standard `ubuntu-latest` runner provides substantially more CPU/RAM than the present Pillow renderer needs, but each job starts from a fresh VM and the repository should avoid turning scheduled rendering into a bulk archive-processing service. Large downloads, repeated full-disc FCI processing, unnecessary Dask graphs, and persistent intermediate datasets would waste bandwidth and runner time.

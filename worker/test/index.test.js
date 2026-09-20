@@ -287,6 +287,19 @@ test("bad JSON, timestamps, sizes, and fractional limits fail cleanly", async ()
 });
 
 
+test("telemetry retention is hard-capped at 30 days", async () => {
+  const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+  const response = await worker.fetch(ingestRequest({
+    device_id: DEVICE,
+    metric: "cpu_temperature",
+    value: 41.0,
+    unit: "degrees_celsius",
+    recorded_at: old,
+  }), { ...env, RETENTION_DAYS: "365" });
+  assert.equal(response.status, 400);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM readings").get().count, 0);
+});
+
 test("model cube routes fail closed without R2 bindings", async () => {
   const read = await worker.fetch(request("/api/v1/model-cube/latest.json"), env);
   assert.equal(read.status, 503);
@@ -363,6 +376,11 @@ test("scheduled events dispatch a satellite-only Pages workflow", async () => {
       headers: { "content-type": "application/json" },
     });
   };
+  const staleAt = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString();
+  sqlite.prepare(
+    "INSERT INTO readings(device_id, metric, value, unit, recorded_at) VALUES(?, ?, ?, ?, ?)",
+  ).run(DEVICE, "cpu_temperature", 20, "degrees_celsius", staleAt);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM readings").get().count, 1);
   try {
     await worker.scheduled(
       { cron: "7,22,37,52 * * * *", scheduledTime: Date.now() },
@@ -379,6 +397,7 @@ test("scheduled events dispatch a satellite-only Pages workflow", async () => {
     globalThis.fetch = originalFetch;
   }
 
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM readings").get().count, 0);
   assert.equal(
     dispatched.url,
     "https://api.github.com/repos/oliwertwister/read-sensor/actions/workflows/pages.yml/dispatches",
