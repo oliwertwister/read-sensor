@@ -5,6 +5,10 @@ const MAX_HISTORY_LIMIT = 10000;
 const MAX_BODY_BYTES = 4096;
 const DEFAULT_RETENTION_DAYS = 30;
 const GITHUB_API_VERSION = "2026-03-10";
+const MODEL_CUBE_READ_PREFIX = "/api/v1/model-cube/";
+const MODEL_CUBE_UPLOAD_PREFIX = "/api/v1/model-cube-upload/";
+const MODEL_CUBE_KEY_PREFIX = "icon-eu/";
+const MAX_MODEL_KEY_LENGTH = 512;
 
 const validName = (value) =>
   typeof value === "string" && /^[A-Za-z0-9_.:-]{1,64}$/.test(value);
@@ -25,8 +29,8 @@ function corsHeaders(request, env) {
   if (!origin || !allowed.includes(origin)) return {};
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-methods": "GET, OPTIONS",
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-methods": "GET, HEAD, OPTIONS",
+    "access-control-allow-headers": "content-type, range",
     "access-control-max-age": "86400",
     vary: "Origin",
   };
@@ -478,6 +482,102 @@ async function synopWeather(request, env, url) {
   }
 }
 
+
+function modelCubeRelativePath(pathname, prefix) {
+  if (!pathname.startsWith(prefix)) return null;
+  let relative;
+  try {
+    relative = decodeURIComponent(pathname.slice(prefix.length));
+  } catch {
+    return null;
+  }
+  if (
+    !relative || relative.length > MAX_MODEL_KEY_LENGTH ||
+    relative.startsWith("/") || relative.endsWith("/") ||
+    relative.includes("\\") || relative.includes("//") ||
+    relative.split("/").some((part) => !part || part === "." || part === ".." || !/^[A-Za-z0-9._=-]+$/.test(part))
+  ) return null;
+  return relative;
+}
+
+function modelContentType(key) {
+  if (key.endsWith(".json")) return "application/json; charset=utf-8";
+  if (key.endsWith(".zarr")) return "application/octet-stream";
+  return "application/octet-stream";
+}
+
+function modelCacheControl(relative) {
+  return relative === "latest.json" || relative === "latest-cube.json"
+    ? "public, max-age=60, must-revalidate"
+    : "public, max-age=31536000, immutable";
+}
+
+function modelRange(value) {
+  if (!value) return null;
+  const match = /^bytes=(\d+)-(\d*)$/.exec(value.trim());
+  if (!match) return undefined;
+  const offset = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isSafeInteger(offset) || offset < 0) return undefined;
+  if (end !== null && (!Number.isSafeInteger(end) || end < offset)) return undefined;
+  return end === null ? { offset } : { offset, length: end - offset + 1 };
+}
+
+function modelObjectHeaders(request, env, object, relative, ranged = false) {
+  const headers = new Headers({
+    ...corsHeaders(request, env),
+    "content-type": object?.httpMetadata?.contentType || modelContentType(relative),
+    "cache-control": modelCacheControl(relative),
+    "accept-ranges": "bytes",
+    "x-content-type-options": "nosniff",
+  });
+  if (object?.etag) headers.set("etag", object.etag);
+  if (Number.isFinite(object?.size)) headers.set("content-length", String(ranged && object.range?.length ? object.range.length : object.size));
+  if (ranged && object?.range && Number.isFinite(object.size)) {
+    const offset = Number(object.range.offset || 0);
+    const length = Number(object.range.length || 0);
+    if (length > 0) headers.set("content-range", `bytes ${offset}-${offset + length - 1}/${object.size}`);
+  }
+  return headers;
+}
+
+async function modelCubeRead(request, env, url) {
+  if (!env.MODEL_CUBE) return json(request, env, { error: "model_cube_unavailable" }, 503);
+  const relative = modelCubeRelativePath(url.pathname, MODEL_CUBE_READ_PREFIX);
+  if (!relative) return json(request, env, { error: "invalid_model_path" }, 400);
+  const key = MODEL_CUBE_KEY_PREFIX + relative;
+  if (request.method === "HEAD") {
+    const object = await env.MODEL_CUBE.head(key);
+    if (!object) return json(request, env, { error: "not_found" }, 404);
+    return new Response(null, { status: 200, headers: modelObjectHeaders(request, env, object, relative) });
+  }
+  const range = modelRange(request.headers.get("range"));
+  if (range === undefined) return json(request, env, { error: "invalid_range" }, 416);
+  const object = await env.MODEL_CUBE.get(key, range ? { range } : undefined);
+  if (!object) return json(request, env, { error: "not_found" }, 404);
+  return new Response(object.body, {
+    status: range ? 206 : 200,
+    headers: modelObjectHeaders(request, env, object, relative, Boolean(range)),
+  });
+}
+
+async function modelUploadAuthorized(request, env) {
+  const supplied = bearerToken(request);
+  if (!supplied || typeof env.MODEL_UPLOAD_TOKEN !== "string" || env.MODEL_UPLOAD_TOKEN.length < 32) return false;
+  return (await sha256Hex(supplied)) === (await sha256Hex(env.MODEL_UPLOAD_TOKEN));
+}
+
+async function modelCubeUpload(request, env, url) {
+  if (!env.MODEL_CUBE || !env.MODEL_UPLOAD_TOKEN) return json(request, env, { error: "model_upload_unavailable" }, 503);
+  if (!(await modelUploadAuthorized(request, env))) return json(request, env, { error: "unauthorized" }, 401);
+  const relative = modelCubeRelativePath(url.pathname, MODEL_CUBE_UPLOAD_PREFIX);
+  if (!relative) return json(request, env, { error: "invalid_model_path" }, 400);
+  const key = MODEL_CUBE_KEY_PREFIX + relative;
+  const contentType = request.headers.get("content-type") || modelContentType(relative);
+  await env.MODEL_CUBE.put(key, request.body, { httpMetadata: { contentType } });
+  return json(request, env, { ok: true, key }, 201);
+}
+
 function githubDispatchSettings(env) {
   const owner = env.GITHUB_OWNER || "oliwertwister";
   const repository = env.GITHUB_REPOSITORY || "read-sensor";
@@ -556,6 +656,12 @@ export default {
       }
       if (url.pathname === "/api/v1/devices" && request.method === "GET") {
         return await devices(request, env);
+      }
+      if (url.pathname.startsWith(MODEL_CUBE_READ_PREFIX) && (request.method === "GET" || request.method === "HEAD")) {
+        return await modelCubeRead(request, env, url);
+      }
+      if (url.pathname.startsWith(MODEL_CUBE_UPLOAD_PREFIX) && request.method === "PUT") {
+        return await modelCubeUpload(request, env, url);
       }
       if (url.pathname === "/api/v1/weather/aviation" && request.method === "GET") {
         return await aviationWeather(request, env, url);

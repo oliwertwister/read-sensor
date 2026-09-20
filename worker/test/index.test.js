@@ -9,6 +9,7 @@ const schema = readFileSync(new URL("../schema.sql", import.meta.url), "utf8");
 const TOKEN = "a".repeat(64);
 const DEVICE = "sensor-node-01";
 const GITHUB_TOKEN = `github_pat_${"b".repeat(64)}`;
+const MODEL_UPLOAD_TOKEN = "m".repeat(64);
 
 class D1Statement {
   constructor(database, sql, values = []) {
@@ -42,6 +43,49 @@ class D1Database {
 
   prepare(sql) {
     return new D1Statement(this.database, sql);
+  }
+}
+
+
+class R2Object {
+  constructor(key, bytes, metadata = {}, range = null, fullSize = null) {
+    this.key = key;
+    this.bytes = bytes;
+    this.body = bytes;
+    this.size = fullSize ?? bytes.byteLength;
+    this.etag = `"etag-${key.length}-${this.size}"`;
+    this.httpMetadata = metadata.httpMetadata || {};
+    this.range = range;
+  }
+}
+
+class R2Bucket {
+  constructor() {
+    this.objects = new Map();
+  }
+
+  async put(key, body, options = {}) {
+    const bytes = new Uint8Array(await new Response(body).arrayBuffer());
+    this.objects.set(key, { bytes, httpMetadata: options.httpMetadata || {} });
+    return new R2Object(key, bytes, { httpMetadata: options.httpMetadata || {} });
+  }
+
+  async head(key) {
+    const stored = this.objects.get(key);
+    if (!stored) return null;
+    return new R2Object(key, stored.bytes, { httpMetadata: stored.httpMetadata });
+  }
+
+  async get(key, options = {}) {
+    const stored = this.objects.get(key);
+    if (!stored) return null;
+    const fullSize = stored.bytes.byteLength;
+    if (!options?.range) return new R2Object(key, stored.bytes, { httpMetadata: stored.httpMetadata });
+    const offset = options.range.offset || 0;
+    const length = options.range.length ?? (fullSize - offset);
+    if (offset >= fullSize) return null;
+    const bytes = stored.bytes.slice(offset, Math.min(fullSize, offset + length));
+    return new R2Object(key, bytes, { httpMetadata: stored.httpMetadata }, { offset, length: bytes.byteLength }, fullSize);
   }
 }
 
@@ -240,6 +284,73 @@ test("bad JSON, timestamps, sizes, and fractional limits fail cleanly", async ()
 
   const limit = await worker.fetch(request("/api/v1/history?limit=1.5"), env);
   assert.equal(limit.status, 400);
+});
+
+
+test("model cube routes fail closed without R2 bindings", async () => {
+  const read = await worker.fetch(request("/api/v1/model-cube/latest.json"), env);
+  assert.equal(read.status, 503);
+  const upload = await worker.fetch(request("/api/v1/model-cube-upload/runs/test/zarr.json", {
+    method: "PUT",
+    headers: { authorization: `Bearer ${MODEL_UPLOAD_TOKEN}` },
+    body: "{}",
+  }), env);
+  assert.equal(upload.status, 503);
+});
+
+test("model cube upload and ranged reads use the R2 gateway", async () => {
+  const r2 = new R2Bucket();
+  const cubeEnv = { ...env, MODEL_CUBE: r2, MODEL_UPLOAD_TOKEN };
+  const bytes = new TextEncoder().encode('{"zarr_format":3,"node_type":"group"}');
+  const upload = await worker.fetch(request("/api/v1/model-cube-upload/runs/20260920T1800Z/cube.zarr/zarr.json", {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${MODEL_UPLOAD_TOKEN}`,
+      "content-type": "application/json",
+    },
+    body: bytes,
+  }), cubeEnv);
+  assert.equal(upload.status, 201);
+
+  const full = await worker.fetch(request("/api/v1/model-cube/runs/20260920T1800Z/cube.zarr/zarr.json", {
+    headers: { origin: "https://oliwertwister.github.io" },
+  }), cubeEnv);
+  assert.equal(full.status, 200);
+  assert.equal(full.headers.get("content-type"), "application/json");
+  assert.equal(full.headers.get("access-control-allow-origin"), "https://oliwertwister.github.io");
+  assert.deepEqual(new Uint8Array(await full.arrayBuffer()), bytes);
+
+  const ranged = await worker.fetch(request("/api/v1/model-cube/runs/20260920T1800Z/cube.zarr/zarr.json", {
+    headers: { range: "bytes=2-8" },
+  }), cubeEnv);
+  assert.equal(ranged.status, 206);
+  assert.equal(ranged.headers.get("content-range"), `bytes 2-8/${bytes.byteLength}`);
+  assert.equal((await ranged.arrayBuffer()).byteLength, 7);
+
+  const head = await worker.fetch(request("/api/v1/model-cube/runs/20260920T1800Z/cube.zarr/zarr.json", {
+    method: "HEAD",
+  }), cubeEnv);
+  assert.equal(head.status, 200);
+  assert.equal(Number(head.headers.get("content-length")), bytes.byteLength);
+});
+
+test("model cube gateway rejects bad auth, traversal and malformed ranges", async () => {
+  const cubeEnv = { ...env, MODEL_CUBE: new R2Bucket(), MODEL_UPLOAD_TOKEN };
+  const unauthorized = await worker.fetch(request("/api/v1/model-cube-upload/latest.json", {
+    method: "PUT",
+    headers: { authorization: `Bearer ${"x".repeat(64)}` },
+    body: "{}",
+  }), cubeEnv);
+  assert.equal(unauthorized.status, 401);
+
+  const traversal = await worker.fetch(request("/api/v1/model-cube/runs//secret"), cubeEnv);
+  assert.equal(traversal.status, 400);
+
+  await cubeEnv.MODEL_CUBE.put("icon-eu/latest.json", "abcdef", { httpMetadata: { contentType: "application/json" } });
+  const badRange = await worker.fetch(request("/api/v1/model-cube/latest.json", {
+    headers: { range: "bytes=-10" },
+  }), cubeEnv);
+  assert.equal(badRange.status, 416);
 });
 
 test("scheduled events dispatch a satellite-only Pages workflow", async () => {

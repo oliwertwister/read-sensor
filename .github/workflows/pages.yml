@@ -76,15 +76,22 @@ jobs:
       - name: Render quantitative ICON-EU static and interactive products
         run: python model/render_icon_products.py --output model/output --background satellite/output/geocolour.webp
 
+      - name: Publish Zarr cube to R2 when configured
+        env:
+          MODEL_CUBE_UPLOAD_URL: ${{ secrets.MODEL_CUBE_UPLOAD_URL }}
+          MODEL_UPLOAD_TOKEN: ${{ secrets.MODEL_UPLOAD_TOKEN }}
+        run: python model/upload_zarr_cube.py
+
       - name: Stage public files
         run: |
           mkdir _site
-          cp index.html app.js model-map.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
+          cp index.html app.js model-map.js cube-storage.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
           cp -R vendor _site/
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/
           mkdir -p _site/model
           cp -R model/output/. _site/model/
+          rm -rf _site/model/cube.zarr
           mkdir -p _site/synop
           cp synop/stations.json _site/synop/latest.json
           cp synop/output/live.json _site/synop/live.json

@@ -72,6 +72,15 @@ This supports real meteorological plotting such as:
 
 Contour generation itself does not require arbitrary interpolation if the model field is already on a suitable regular grid: contours can be computed directly on the model grid. Interpolation/resampling is appropriate when combining different grids, producing a common display grid, or sampling a field at arbitrary locations. It should not be used merely to make coarse model data look more detailed than their native information content.
 
+
+## Zarr / R2 cube migration prototype
+
+A parallel storage migration is now implemented in code without replacing the current map products yet. The ICON build writes a canonical **Zarr v3** cube with `sharding_indexed` storage, 128×128 logical horizontal chunks packed into 512×512 shards, and Blosc/Zstd compression. Canonical values are stored once (K, Pa, m, m/s, %, kg m-2) and presentation conversions remain a frontend concern.
+
+The target backend is **Cloudflare R2** behind the existing Worker. The Worker now contains dormant byte-range GET/HEAD and authenticated upload routes; `model/upload_zarr_cube.py` publishes immutable run prefixes and updates `latest.json` only after all run objects are uploaded. The browser connector lazy-loads a vendored Zarrita bundle only when an R2 cube pointer is available.
+
+The current Cloudflare OAuth login on the development Mac has expired, so the R2 bucket/binding and upload secret are **not yet provisioned**. Until a normal Wrangler re-login is completed, the existing Pages-based raster/GeoJSON path remains authoritative and the R2 gateway fails closed. The full `cube.zarr/` directory is explicitly removed from the Pages artifact, so this prototype does not increase published-site storage.
+
 ## Cost-free compute constraints
 
 The repository is public, so standard GitHub-hosted Actions runners are currently free for public repositories. The standard `ubuntu-latest` runner provides substantially more CPU/RAM than the present Pillow renderer needs, but each job starts from a fresh VM and the repository should avoid turning scheduled rendering into a bulk archive-processing service. Large downloads, repeated full-disc FCI processing, unnecessary Dask graphs, and persistent intermediate datasets would waste bandwidth and runner time.

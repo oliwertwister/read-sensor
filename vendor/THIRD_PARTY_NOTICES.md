@@ -8,3 +8,5 @@ The geometry upload feature vendors these open-source libraries so files can be 
 - **node-unrar-js 2.0.2** — MIT — https://github.com/YuJianrong/node-unrar.js
 
 Full license texts are included under `vendor/licenses/`.
+
+- **Zarrita 0.7.5** — MIT — https://github.com/manzt/zarrita.js — vendored as a lazy-loaded browser bundle for Zarr v3 reads. License: `vendor/ZARRITA_LICENSE.txt`.

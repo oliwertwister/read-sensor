@@ -19,6 +19,7 @@ import numpy as np
 from PIL import Image
 
 import render_icon_synoptic as syn
+from zarr_cube import IconZarrCubeWriter
 
 
 FIELD_SPECS = {
@@ -231,8 +232,11 @@ def regular_grid(data):
     if float(data[lon_name][0]) > float(data[lon_name][-1]):
         data = data.sortby(lon_name)
     return data
-def prepared_fields(raw: dict) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
-    grids = {key: regular_grid(value) for key, value in raw.items()}
+def regular_grids(raw: dict) -> dict:
+    return {key: regular_grid(value) for key, value in raw.items()}
+
+
+def prepared_fields_from_grids(grids: dict) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
     base = grids["t_2m"]
     lat_name = "latitude" if "latitude" in base.coords else "lat"
     lon_name = "longitude" if "longitude" in base.coords else "lon"
@@ -266,6 +270,10 @@ def prepared_fields(raw: dict) -> tuple[dict[str, np.ndarray], np.ndarray, np.nd
         if array.shape != shape:
             raise RuntimeError(f"Grid mismatch for {key}: {array.shape} != {shape}")
     return arrays, lats, lons
+
+
+def prepared_fields(raw: dict) -> tuple[dict[str, np.ndarray], np.ndarray, np.ndarray]:
+    return prepared_fields_from_grids(regular_grids(raw))
 
 
 def rgb_hex(rgb) -> str:
@@ -548,6 +556,7 @@ def main() -> int:
     parser.add_argument("--background", default="satellite/output/geocolour.webp")
     parser.add_argument("--satellite-meta", default="satellite/output/latest.json")
     parser.add_argument("--time-radius", type=int, default=1, help="Forecast steps before/after nearest current valid time")
+    parser.add_argument("--skip-zarr", action="store_true", help="Skip the local Zarr v3 cube prototype")
     args = parser.parse_args()
     if args.time_radius < 0 or args.time_radius > 4:
         raise SystemExit("--time-radius must be between 0 and 4")
@@ -574,11 +583,25 @@ def main() -> int:
     current_raw = None
     current_urls = None
     current_lead = selections[current_index][0]
+    cube_writer = None
+    cube_manifest = None
     with tempfile.TemporaryDirectory(prefix="read-sensor-icon-") as temporary:
         workdir = Path(temporary)
         for index, (lead, urls) in enumerate(selections):
             raw = {name: syn.open_grib(url, workdir) for name, url in urls.items()}
-            arrays, lats, lons = prepared_fields(raw)
+            grids = regular_grids(raw)
+            arrays, lats, lons = prepared_fields_from_grids(grids)
+            if not args.skip_zarr:
+                if cube_writer is None:
+                    cube_writer = IconZarrCubeWriter(
+                        output_dir / "cube.zarr",
+                        run=run,
+                        leads=[item[0] for item in selections],
+                        levels=PRESSURE_LEVELS_HPA,
+                        lats=lats,
+                        lons=lons,
+                    )
+                cube_writer.write_time(index, grids)
             step_key = f"f{lead:03d}"
             step_dir = output_dir / "times" / step_key
             step_dir.mkdir(parents=True, exist_ok=True)
@@ -614,6 +637,10 @@ def main() -> int:
             background, output_dir / "synoptic.webp", run, current_lead,
         )
 
+    if cube_writer is not None:
+        cube_writer.write_manifest(output_dir / "cube-manifest.json")
+        cube_manifest = cube_writer.manifest()
+
     timeline = {
         "version": 1,
         "run_at": run.isoformat().replace("+00:00", "Z"),
@@ -639,6 +666,7 @@ def main() -> int:
     static_meta["satellite_observed_at"] = satellite_observed_at
     static_meta["satellite_generated_at"] = satellite_generated_at
     static_meta["files"] = current_urls
+    static_meta["cube"] = cube_manifest
     (output_dir / "latest.json").write_text(
         json.dumps(static_meta, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -650,6 +678,7 @@ def main() -> int:
         "timeline_steps": [step["forecast_hour"] for step in time_steps],
         "interactive_fields": sorted(static_meta["interactive"]["fields"]),
         "interactive_layers": len(static_meta["interactive"]["layers"]),
+        "zarr_cube": cube_manifest,
     }, indent=2))
     return 0
 
