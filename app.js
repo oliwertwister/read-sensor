@@ -7,8 +7,10 @@ const state = {
   metric: config.defaultMetric,
   readings: [],
   chart: null,
+  sensorRollingWindow: false,
   sensorWindowMs: 24 * 60 * 60 * 1000,
   sensorWindowKey: "24h",
+  sensorDataLimit: 500,
   sensorAverageMinutes: 0,
   sensorTableRows: [],
   map: null,
@@ -177,12 +179,20 @@ function aggregateSensorRows(visible, windowStart) {
 }
 
 function cpuWindow(now = Date.now()) {
-  const start = now - state.sensorWindowMs;
   const all = state.readings
     .map((reading) => ({ reading, time: readingTime(reading)?.getTime() }))
     .filter(({ time }) => Number.isFinite(time) && time <= now)
     .sort((a, b) => a.time - b.time);
-  const visible = all.filter(({ time }) => time >= start);
+
+  const rollingStart = now - state.sensorWindowMs;
+  const visible = state.sensorRollingWindow
+    ? all.filter(({ time }) => time >= rollingStart)
+    : all.slice(-state.sensorDataLimit);
+
+  const dataStart = visible[0]?.time ?? now;
+  const dataEnd = visible.at(-1)?.time ?? now;
+  const start = state.sensorRollingWindow ? rollingStart : dataStart;
+  const end = state.sensorRollingWindow ? now : dataEnd;
   const seriesRows = aggregateSensorRows(visible, start);
   const intervalMs = state.sensorAverageMinutes
     ? state.sensorAverageMinutes * 60 * 1000
@@ -193,10 +203,10 @@ function cpuWindow(now = Date.now()) {
   const gaps = [];
 
   if (!seriesRows.length) {
-    gaps.push({ from: start, to: now, open: true });
+    if (state.sensorRollingWindow) gaps.push({ from: start, to: end, open: true });
   } else {
     const first = seriesRows[0];
-    if (first.time - start > gapThresholdMs) {
+    if (state.sensorRollingWindow && first.time - start > gapThresholdMs) {
       gaps.push({ from: start, to: first.time, open: false });
     }
     for (let index = 1; index < seriesRows.length; index += 1) {
@@ -207,8 +217,8 @@ function cpuWindow(now = Date.now()) {
       }
     }
     const last = seriesRows.at(-1);
-    if (now - last.time > gapThresholdMs) {
-      gaps.push({ from: last.time + intervalMs, to: now, open: true });
+    if (state.sensorRollingWindow && end - last.time > gapThresholdMs) {
+      gaps.push({ from: last.time + intervalMs, to: end, open: true });
     }
   }
 
@@ -221,7 +231,7 @@ function cpuWindow(now = Date.now()) {
     points.push({ x: row.time, y: row.value });
   });
 
-  return { start, end: now, visible, seriesRows, points, gaps, intervalMs };
+  return { start, end, visible, seriesRows, points, gaps, intervalMs };
 }
 
 function updateCpuRange(timeline) {
@@ -234,7 +244,10 @@ function updateCpuRange(timeline) {
   const aggregation = state.sensorAverageMinutes
     ? `${state.sensorAverageMinutes} min average`
     : "raw readings";
-  el.textContent = `Rolling ${sensorWindowLabel()} · ${aggregation} · ${timeline.visible.length.toLocaleString()} source readings · ${timeline.seriesRows.length.toLocaleString()} plotted points · ${gapSummary}`;
+  const selection = state.sensorRollingWindow
+    ? `Rolling ${sensorWindowLabel()}`
+    : `Data limit ${state.sensorDataLimit.toLocaleString()}`;
+  el.textContent = `${selection} · ${aggregation} · ${timeline.visible.length.toLocaleString()} source readings · ${timeline.seriesRows.length.toLocaleString()} plotted points · ${gapSummary}`;
 }
 
 const cpuDowntimePlugin = {
@@ -282,14 +295,14 @@ function renderSensorHistory(timeline) {
     const aggregation = state.sensorAverageMinutes ? `${state.sensorAverageMinutes} min averages` : "raw readings";
     summary.textContent = rows.length > SENSOR_TABLE_PREVIEW_LIMIT
       ? `${aggregation} · showing latest ${SENSOR_TABLE_PREVIEW_LIMIT.toLocaleString()} of ${rows.length.toLocaleString()} rows · CSV includes all rows`
-      : `${aggregation} · ${rows.length.toLocaleString()} rows in selected window`;
+      : `${aggregation} · ${rows.length.toLocaleString()} rows in selected range`;
   }
   if (!preview.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = 4;
     cell.className = "muted";
-    cell.textContent = "No data in the selected window.";
+    cell.textContent = "No data in the selected range.";
     row.append(cell);
     body.append(row);
     return;
@@ -309,45 +322,49 @@ function renderSensorHistory(timeline) {
   }
 }
 
-function csvCell(value, delimiter = ";") {
+function csvCell(value, delimiter = ",") {
   const text = String(value ?? "");
   const escaped = text.replaceAll('"', '""');
   return text.includes(delimiter) || /["\r\n]/.test(text) ? `"${escaped}"` : text;
 }
 
-function csvDecimal(value) {
-  return Number(value).toFixed(6).replace(".", ",");
+function exportSensorUnit(unit) {
+  return unit === "C" || unit === "°C" ? "degrees_celsius" : unit;
 }
 
 function downloadSensorCsv() {
   const rows = state.sensorTableRows;
   if (!rows.length) return;
   const aggregation = state.sensorAverageMinutes ? `${state.sensorAverageMinutes}min_average` : "raw";
-  const delimiter = ";";
-  const header = ["timestamp", "device", "metric", "window", "aggregation_minutes", "value", "unit", "samples"];
+  const delimiter = ",";
+  const selectionMode = state.sensorRollingWindow ? "rolling_window" : "data_limit";
+  const selectionValue = state.sensorRollingWindow ? state.sensorWindowKey : state.sensorDataLimit;
+  const header = [
+    "timestamp", "device", "metric", "selection_mode", "selection_value",
+    "aggregation_minutes", "value", "unit", "samples",
+  ];
   const lines = [header.map((value) => csvCell(value, delimiter)).join(delimiter)];
   for (const row of rows) {
     lines.push([
       new Date(row.time).toISOString(),
       state.device,
       state.metric,
-      state.sensorWindowKey,
+      selectionMode,
+      selectionValue,
       state.sensorAverageMinutes || 0,
-      csvDecimal(row.value),
-      row.unit || "",
+      Number(row.value).toFixed(6),
+      exportSensorUnit(row.unit || ""),
       row.samples,
     ].map((value) => csvCell(value, delimiter)).join(delimiter));
   }
-  // UTF-8 BOM makes Excel on macOS/Windows decode symbols such as °C correctly.
-  // Semicolon fields + decimal comma match the spreadsheet conventions used by
-  // German/European locales when a CSV is opened directly.
   const csv = `\uFEFF${lines.join("\r\n")}\r\n`;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const selection = state.sensorRollingWindow ? state.sensorWindowKey : `limit-${state.sensorDataLimit}`;
   link.href = url;
-  link.download = `${state.device}_${state.metric}_${state.sensorWindowKey}_${aggregation}_${stamp}.csv`;
+  link.download = `${state.device}_${state.metric}_${selection}_${aggregation}_${stamp}.csv`;
   document.body.append(link);
   link.click();
   link.remove();
@@ -458,7 +475,7 @@ function renderReadings() {
             maxRotation: 0,
             autoSkip: false,
             callback(value) {
-              return formatCpuTick(new Date(value), state.sensorWindowMs);
+              return formatCpuTick(new Date(value), this.max - this.min);
             },
           },
         },
@@ -473,13 +490,24 @@ function renderReadings() {
   });
 }
 
+function normalizedDataLimit(value) {
+  const number = Math.round(Number(value));
+  if (!Number.isFinite(number)) return 500;
+  return Math.min(config.maxHistoryLimit || 10000, Math.max(10, number));
+}
+
 function historyQueryLimit() {
+  if (!state.sensorRollingWindow) return state.sensorDataLimit;
   const sourceInterval = CPU_SAMPLE_INTERVAL_MS;
   const expected = Math.ceil((state.sensorWindowMs + (2 * sourceInterval)) / sourceInterval) + 50;
   return Math.min(config.maxHistoryLimit || 10000, Math.max(288, expected));
 }
 
 function trimHistoryBuffer(now = Date.now()) {
+  if (!state.sensorRollingWindow) {
+    state.readings = state.readings.slice(-state.sensorDataLimit);
+    return;
+  }
   const margin = Math.max(
     CPU_GAP_THRESHOLD_MS * 2,
     state.sensorAverageMinutes * 60 * 1000 * 2,
@@ -493,18 +521,20 @@ function trimHistoryBuffer(now = Date.now()) {
 
 async function loadHistory() {
   setStatus("Loading…");
-  const margin = Math.max(
-    CPU_GAP_THRESHOLD_MS * 2,
-    state.sensorAverageMinutes * 60 * 1000 * 2,
-  );
-  const since = new Date(Date.now() - state.sensorWindowMs - margin).toISOString();
+  const parameters = {
+    device: state.device,
+    metric: state.metric,
+    limit: historyQueryLimit(),
+  };
+  if (state.sensorRollingWindow) {
+    const margin = Math.max(
+      CPU_GAP_THRESHOLD_MS * 2,
+      state.sensorAverageMinutes * 60 * 1000 * 2,
+    );
+    parameters.since = new Date(Date.now() - state.sensorWindowMs - margin).toISOString();
+  }
   try {
-    const payload = await fetchJson("/api/v1/history", {
-      device: state.device,
-      metric: state.metric,
-      since,
-      limit: historyQueryLimit(),
-    });
+    const payload = await fetchJson("/api/v1/history", parameters);
     state.readings = payload.readings;
     renderReadings();
   } catch (error) {
@@ -538,14 +568,40 @@ async function pollLatest() {
   }
 }
 
-function initSensorChartControls() {
+function syncSensorSelectionControls() {
+  const rolling = $("sensorRollingWindow");
   const windowSelect = $("sensorWindow");
+  const limitInput = $("sensorDataLimit");
+  if (!rolling || !windowSelect || !limitInput) return;
+  state.sensorRollingWindow = rolling.checked;
+  windowSelect.disabled = !state.sensorRollingWindow;
+  limitInput.disabled = state.sensorRollingWindow;
+}
+
+function initSensorChartControls() {
+  const rolling = $("sensorRollingWindow");
+  const windowSelect = $("sensorWindow");
+  const limitInput = $("sensorDataLimit");
   const averageSelect = $("sensorAverage");
+  syncSensorSelectionControls();
+
+  rolling?.addEventListener("change", async () => {
+    syncSensorSelectionControls();
+    state.readings = [];
+    await loadHistory();
+  });
   windowSelect?.addEventListener("change", async () => {
     const key = windowSelect.value;
-    if (!SENSOR_WINDOWS[key]) return;
+    if (!state.sensorRollingWindow || !SENSOR_WINDOWS[key]) return;
     state.sensorWindowKey = key;
     state.sensorWindowMs = SENSOR_WINDOWS[key];
+    state.readings = [];
+    await loadHistory();
+  });
+  limitInput?.addEventListener("change", async () => {
+    if (state.sensorRollingWindow) return;
+    state.sensorDataLimit = normalizedDataLimit(limitInput.value);
+    limitInput.value = String(state.sensorDataLimit);
     state.readings = [];
     await loadHistory();
   });
