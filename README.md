@@ -126,3 +126,20 @@ The dashboard combines several independent upstream services. Availability, late
 ### Licensing note
 
 Rendered visual products and original numerical data are not interchangeable from a licensing perspective. In particular, EUMETSAT licensing depends on product and use case. Native FCI Level-1c ingestion should be implemented only after confirming the applicable Data Store/NRT licence and redistribution conditions. The pipeline should publish derived visual products rather than republishing original licensed numerical files unless the applicable licence explicitly permits redistribution.
+
+## Cost and retention safety policy
+
+The deployment is intentionally configured below provider free-tier/soft limits. These are project guardrails, not just documentation:
+
+| Resource | Provider limit relevant here | Project ceiling / retention | Enforcement |
+| --- | --- | --- | --- |
+| GitHub Pages | 1 GB published site; 100 GB/month soft bandwidth | 500 MiB staged-site ceiling; no Zarr cube on Pages | Actions build fails before deploy if `_site` exceeds 500 MiB or contains `model/cube.zarr` |
+| GitHub Actions | Public repositories on standard hosted runners are free | Standard Ubuntu runners only; no long-lived model artifacts | Workflow design; model data is staged/deployed, not retained as Actions artifacts |
+| Cloudflare Workers Free | 100,000 requests/day | No paid Worker upgrade assumed | Provider hard free-plan request limit; excess requests fail rather than becoming metered Workers usage |
+| Cloudflare D1 Free | 500 MB/database, 5 GB/account | Telemetry rows: **30 days maximum** | Worker clamps `RETENTION_DAYS` to 30, rejects older ingests, prunes on ingest and every cron run |
+| Cloudflare R2 Standard | 10 GB-month storage, 1M Class A and 10M Class B operations/month included | **7 GiB project storage ceiling**, 120 MiB/run, 2000 objects/run, 2 MiB/object, standard 00/06/12/18 UTC runs only | Worker upload preflight + uploader validation + Worker object/path guards |
+| R2 model history | User-defined | **14 days maximum** for immutable `icon-eu/runs/` | Bucket lifecycle rule `expire-model-cubes-14d`; `latest.json` is outside the expiring prefix |
+
+The R2 worst-case accepted write rate is bounded by four standard ICON runs/day. At the 120 MiB per-run ceiling and 14-day lifecycle, retained model storage is at most about 6.6 GiB before the independent 7 GiB preflight ceiling stops new uploads. Re-publishing an already-current model run is skipped, so the 15-minute refresh job does not repeatedly rewrite the same cube.
+
+Animation is generated in the browser from existing forecast-time layers. No PNG/GIF/video frame sequence is stored server-side. The next frame is prefetched into the browser cache, while the time scrubber, loop control and speed selector reuse the same immutable map assets.

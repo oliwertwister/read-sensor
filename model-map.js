@@ -15,6 +15,7 @@
     animationPlaying: false,
     animationTimer: null,
     animationSerial: 0,
+    prefetchedSteps: new Set(),
     cubeState: null,
     initializing: null,
   };
@@ -55,7 +56,7 @@
   }
 
   async function fetchModelJson(path) {
-    const response = await fetch(versioned(path), { cache: "no-store" });
+    const response = await fetch(versioned(path), { cache: "force-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status} for ${path}`);
     return await response.json();
   }
@@ -411,6 +412,39 @@
     return Number.isFinite(value) && value >= 250 ? value : 1000;
   }
 
+  async function prefetchForecastStep(index) {
+    const timeline = iconModelState.timeline;
+    const step = timeline?.steps?.[index];
+    if (!step || iconModelState.prefetchedSteps.has(step.valid_at)) return;
+    try {
+      const meta = await fetchModelJson(step.meta_file);
+      const enabledIds = new Set(
+        [...iconModelState.layerPreferences.entries()]
+          .filter(([, preference]) => preference?.enabled)
+          .map(([id]) => id),
+      );
+      const selectedPressure = Number(iconModelState.selectedPressureLevel);
+      const assets = meta.layers.filter((def) => {
+        if (!enabledIds.has(def.id)) return false;
+        return def.pressure_level_hpa == null || Number(def.pressure_level_hpa) === selectedPressure;
+      });
+      await Promise.allSettled(assets.map((def) => {
+        const url = versioned(def.file);
+        if (def.kind === "raster" || def.kind === "satellite") {
+          return new Promise((resolve) => {
+            const image = new Image();
+            image.onload = image.onerror = resolve;
+            image.src = url;
+          });
+        }
+        return fetch(url, { cache: "force-cache" });
+      }));
+      iconModelState.prefetchedSteps.add(step.valid_at);
+    } catch (error) {
+      console.debug("icon_animation_prefetch_failed", error);
+    }
+  }
+
   async function animationTick(serial) {
     if (!iconModelState.animationPlaying || serial !== iconModelState.animationSerial) return;
     const steps = iconModelState.timeline?.steps || [];
@@ -426,8 +460,11 @@
       }
       next = 0;
     }
+    await prefetchForecastStep(next);
     await switchForecastTime(next, { fromAnimation: true });
     if (!iconModelState.animationPlaying || serial !== iconModelState.animationSerial) return;
+    const following = (next + 1) % steps.length;
+    void prefetchForecastStep(following);
     iconModelState.animationTimer = setTimeout(() => animationTick(serial), animationDelay());
   }
 
@@ -438,6 +475,7 @@
     iconModelState.animationSerial += 1;
     const serial = iconModelState.animationSerial;
     updateAnimationControls();
+    void prefetchForecastStep((iconModelState.currentStepIndex + 1) % steps.length);
     iconModelState.animationTimer = setTimeout(() => animationTick(serial), 150);
   }
 
@@ -703,6 +741,9 @@
           map.fitBounds(iconModelState.meta.bounds, { padding: [8, 8] });
         });
         setMapStatus("Interactive fields ready", "ok");
+        if (iconModelState.timeline?.steps?.length > 1) {
+          void prefetchForecastStep((iconModelState.currentStepIndex + 1) % iconModelState.timeline.steps.length);
+        }
         void probeCubeStorage();
       } catch (error) {
         console.error("icon_map_init_failed", error);

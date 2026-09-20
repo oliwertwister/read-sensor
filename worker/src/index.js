@@ -9,8 +9,15 @@ const GITHUB_API_VERSION = "2026-03-10";
 const MODEL_CUBE_READ_PREFIX = "/api/v1/model-cube/";
 const MODEL_CUBE_UPLOAD_PREFIX = "/api/v1/model-cube-upload/";
 const MODEL_CUBE_AUTH_CHECK = "/api/v1/model-cube-upload-auth-check";
+const MODEL_CUBE_PREFLIGHT = "/api/v1/model-cube-upload-preflight";
 const MODEL_CUBE_KEY_PREFIX = "icon-eu/";
 const MAX_MODEL_KEY_LENGTH = 512;
+const MAX_MODEL_UPLOAD_BYTES = 2 * 1024 * 1024;
+const MODEL_RUN_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+const MODEL_RUN_MAX_FUTURE_MS = 60 * 60 * 1000;
+const MODEL_STORAGE_SAFETY_BYTES = 7 * 1024 * 1024 * 1024;
+const MAX_OBJECTS_PER_MODEL_RUN = 2000;
+const MAX_MODEL_RUN_BYTES = 120 * 1024 * 1024;
 const GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
 const GITHUB_OIDC_AUDIENCE = "read-sensor-r2-upload";
 let githubOidcKeysCache = { expiresAt: 0, keys: [] };
@@ -524,6 +531,18 @@ function modelCubeRelativePath(pathname, prefix) {
   return relative;
 }
 
+function modelUploadRelativePathAllowed(relative, now = Date.now()) {
+  if (relative === "latest.json") return true;
+  const match = /^runs\/(\d{8}T\d{6}Z)\/(?:cube-manifest\.json|cube\.zarr\/.+)$/.exec(relative);
+  if (!match) return false;
+  const stamp = match[1];
+  const run = Date.parse(`${stamp.slice(0,4)}-${stamp.slice(4,6)}-${stamp.slice(6,8)}T${stamp.slice(9,11)}:${stamp.slice(11,13)}:${stamp.slice(13,15)}Z`);
+  if (!Number.isFinite(run)) return false;
+  const hour = Number(stamp.slice(9,11));
+  if (![0, 6, 12, 18].includes(hour) || stamp.slice(11,15) !== "0000") return false;
+  return run >= now - MODEL_RUN_MAX_AGE_MS && run <= now + MODEL_RUN_MAX_FUTURE_MS;
+}
+
 function modelContentType(key) {
   if (key.endsWith(".json")) return "application/json; charset=utf-8";
   if (key.endsWith(".zarr")) return "application/octet-stream";
@@ -707,14 +726,62 @@ async function modelUploadAuthorized(request, env) {
   return (await sha256Hex(supplied)) === (await sha256Hex(env.MODEL_UPLOAD_TOKEN));
 }
 
+async function modelCubeStorageUsage(env) {
+  let cursor;
+  let bytes = 0;
+  let objects = 0;
+  do {
+    const page = await env.MODEL_CUBE.list({ prefix: `${MODEL_CUBE_KEY_PREFIX}runs/`, limit: 1000, cursor });
+    for (const object of page.objects || []) {
+      bytes += Number(object.size || 0);
+      objects += 1;
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return { bytes, objects };
+}
+
+async function modelCubePreflight(request, env, url) {
+  if (!env.MODEL_CUBE) return json(request, env, { error: "model_upload_unavailable" }, 503);
+  if (!(await modelUploadAuthorized(request, env))) return json(request, env, { error: "unauthorized" }, 401);
+  const runBytes = Number(url.searchParams.get("run_bytes"));
+  const runObjects = Number(url.searchParams.get("run_objects"));
+  if (!Number.isSafeInteger(runBytes) || runBytes < 1 || runBytes > MAX_MODEL_RUN_BYTES ||
+      !Number.isSafeInteger(runObjects) || runObjects < 1 || runObjects > MAX_OBJECTS_PER_MODEL_RUN) {
+    return json(request, env, { error: "invalid_model_budget" }, 400);
+  }
+  const usage = await modelCubeStorageUsage(env);
+  const projectedBytes = usage.bytes + runBytes;
+  const allowed = projectedBytes <= MODEL_STORAGE_SAFETY_BYTES;
+  return json(request, env, {
+    ok: allowed,
+    current_bytes: usage.bytes,
+    current_objects: usage.objects,
+    run_bytes: runBytes,
+    run_objects: runObjects,
+    projected_bytes: projectedBytes,
+    safety_ceiling_bytes: MODEL_STORAGE_SAFETY_BYTES,
+  }, allowed ? 200 : 409);
+}
+
 async function modelCubeUpload(request, env, url) {
   if (!env.MODEL_CUBE) return json(request, env, { error: "model_upload_unavailable" }, 503);
   if (!(await modelUploadAuthorized(request, env))) return json(request, env, { error: "unauthorized" }, 401);
   const relative = modelCubeRelativePath(url.pathname, MODEL_CUBE_UPLOAD_PREFIX);
-  if (!relative) return json(request, env, { error: "invalid_model_path" }, 400);
+  if (!relative || !modelUploadRelativePathAllowed(relative)) {
+    return json(request, env, { error: "invalid_model_path" }, 400);
+  }
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > MAX_MODEL_UPLOAD_BYTES) {
+    return json(request, env, { error: "model_object_too_large" }, 413);
+  }
+  const body = await request.arrayBuffer();
+  if (body.byteLength > MAX_MODEL_UPLOAD_BYTES) {
+    return json(request, env, { error: "model_object_too_large" }, 413);
+  }
   const key = MODEL_CUBE_KEY_PREFIX + relative;
   const contentType = request.headers.get("content-type") || modelContentType(relative);
-  await env.MODEL_CUBE.put(key, request.body, { httpMetadata: { contentType } });
+  await env.MODEL_CUBE.put(key, body, { httpMetadata: { contentType } });
   return json(request, env, { ok: true, key }, 201);
 }
 
@@ -802,6 +869,9 @@ export default {
       }
       if (url.pathname === MODEL_CUBE_AUTH_CHECK && request.method === "POST") {
         return await modelUploadAuthCheck(request, env);
+      }
+      if (url.pathname === MODEL_CUBE_PREFLIGHT && request.method === "POST") {
+        return await modelCubePreflight(request, env, url);
       }
       if (url.pathname.startsWith(MODEL_CUBE_UPLOAD_PREFIX) && request.method === "PUT") {
         return await modelCubeUpload(request, env, url);

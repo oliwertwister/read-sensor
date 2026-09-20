@@ -76,6 +76,22 @@ class R2Bucket {
     return new R2Object(key, stored.bytes, { httpMetadata: stored.httpMetadata });
   }
 
+  async list(options = {}) {
+    const prefix = options.prefix || "";
+    const entries = [...this.objects.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .sort(([a], [b]) => a.localeCompare(b));
+    const limit = options.limit || 1000;
+    const start = options.cursor ? Number(options.cursor) : 0;
+    const page = entries.slice(start, start + limit);
+    const next = start + page.length;
+    return {
+      objects: page.map(([key, stored]) => ({ key, size: stored.bytes.byteLength })),
+      truncated: next < entries.length,
+      cursor: next < entries.length ? String(next) : undefined,
+    };
+  }
+
   async get(key, options = {}) {
     const stored = this.objects.get(key);
     if (!stored) return null;
@@ -87,6 +103,14 @@ class R2Bucket {
     const bytes = stored.bytes.slice(offset, Math.min(fullSize, offset + length));
     return new R2Object(key, bytes, { httpMetadata: stored.httpMetadata }, { offset, length: bytes.byteLength }, fullSize);
   }
+}
+
+
+function latestStandardRunKey(now = new Date()) {
+  const date = new Date(now);
+  date.setUTCMinutes(0, 0, 0);
+  date.setUTCHours(Math.floor(date.getUTCHours() / 6) * 6);
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.000Z$/, "Z");
 }
 
 async function sha256(value) {
@@ -329,7 +353,8 @@ test("model cube upload and ranged reads use the R2 gateway", async () => {
   const r2 = new R2Bucket();
   const cubeEnv = { ...env, MODEL_CUBE: r2, MODEL_UPLOAD_TOKEN };
   const bytes = new TextEncoder().encode('{"zarr_format":3,"node_type":"group"}');
-  const upload = await worker.fetch(request("/api/v1/model-cube-upload/runs/20260920T1800Z/cube.zarr/zarr.json", {
+  const runKey = latestStandardRunKey();
+  const upload = await worker.fetch(request(`/api/v1/model-cube-upload/runs/${runKey}/cube.zarr/zarr.json`, {
     method: "PUT",
     headers: {
       authorization: `Bearer ${MODEL_UPLOAD_TOKEN}`,
@@ -339,7 +364,7 @@ test("model cube upload and ranged reads use the R2 gateway", async () => {
   }), cubeEnv);
   assert.equal(upload.status, 201);
 
-  const full = await worker.fetch(request("/api/v1/model-cube/runs/20260920T1800Z/cube.zarr/zarr.json", {
+  const full = await worker.fetch(request(`/api/v1/model-cube/runs/${runKey}/cube.zarr/zarr.json`, {
     headers: { origin: "https://oliwertwister.github.io" },
   }), cubeEnv);
   assert.equal(full.status, 200);
@@ -347,18 +372,41 @@ test("model cube upload and ranged reads use the R2 gateway", async () => {
   assert.equal(full.headers.get("access-control-allow-origin"), "https://oliwertwister.github.io");
   assert.deepEqual(new Uint8Array(await full.arrayBuffer()), bytes);
 
-  const ranged = await worker.fetch(request("/api/v1/model-cube/runs/20260920T1800Z/cube.zarr/zarr.json", {
+  const ranged = await worker.fetch(request(`/api/v1/model-cube/runs/${runKey}/cube.zarr/zarr.json`, {
     headers: { range: "bytes=2-8" },
   }), cubeEnv);
   assert.equal(ranged.status, 206);
   assert.equal(ranged.headers.get("content-range"), `bytes 2-8/${bytes.byteLength}`);
   assert.equal((await ranged.arrayBuffer()).byteLength, 7);
 
-  const head = await worker.fetch(request("/api/v1/model-cube/runs/20260920T1800Z/cube.zarr/zarr.json", {
+  const head = await worker.fetch(request(`/api/v1/model-cube/runs/${runKey}/cube.zarr/zarr.json`, {
     method: "HEAD",
   }), cubeEnv);
   assert.equal(head.status, 200);
   assert.equal(Number(head.headers.get("content-length")), bytes.byteLength);
+});
+
+test("model cube storage preflight enforces the project safety ceiling", async () => {
+  const r2 = new R2Bucket();
+  const cubeEnv = { ...env, MODEL_CUBE: r2, MODEL_UPLOAD_TOKEN };
+  await r2.put("icon-eu/runs/seed/cube.zarr/c/0", new Uint8Array(1024));
+  const ok = await worker.fetch(request("/api/v1/model-cube-upload-preflight?run_bytes=1048576&run_objects=100", {
+    method: "POST",
+    headers: { authorization: `Bearer ${MODEL_UPLOAD_TOKEN}` },
+    body: "",
+  }), cubeEnv);
+  assert.equal(ok.status, 200);
+  const budget = await ok.json();
+  assert.equal(budget.ok, true);
+  assert.equal(budget.current_bytes, 1024);
+  assert.equal(budget.run_objects, 100);
+
+  const tooLargeRun = await worker.fetch(request("/api/v1/model-cube-upload-preflight?run_bytes=125829121&run_objects=100", {
+    method: "POST",
+    headers: { authorization: `Bearer ${MODEL_UPLOAD_TOKEN}` },
+    body: "",
+  }), cubeEnv);
+  assert.equal(tooLargeRun.status, 400);
 });
 
 test("model cube gateway rejects bad auth, traversal and malformed ranges", async () => {
@@ -378,6 +426,20 @@ test("model cube gateway rejects bad auth, traversal and malformed ranges", asyn
     headers: { range: "bytes=-10" },
   }), cubeEnv);
   assert.equal(badRange.status, 416);
+
+  const stale = await worker.fetch(request("/api/v1/model-cube-upload/runs/20200101T000000Z/cube.zarr/zarr.json", {
+    method: "PUT",
+    headers: { authorization: `Bearer ${MODEL_UPLOAD_TOKEN}` },
+    body: "{}",
+  }), cubeEnv);
+  assert.equal(stale.status, 400);
+
+  const oversized = await worker.fetch(request(`/api/v1/model-cube-upload/runs/${latestStandardRunKey()}/cube.zarr/c/0/0/0`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${MODEL_UPLOAD_TOKEN}` },
+    body: new Uint8Array(2 * 1024 * 1024 + 1),
+  }), cubeEnv);
+  assert.equal(oversized.status, 413);
 });
 
 test("scheduled events dispatch a satellite-only Pages workflow", async () => {

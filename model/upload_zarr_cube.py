@@ -107,9 +107,22 @@ def main() -> int:
             f"Refusing {total_bytes / 1024 / 1024:.1f} MiB cube; "
             f"per-run safety limit is {MAX_RUN_BYTES / 1024 / 1024:.0f} MiB"
         )
+    preflight_url = base_url.rstrip("/").replace("/api/v1/model-cube-upload", "/api/v1/model-cube-upload-preflight")
+    preflight_url += f"?run_bytes={total_bytes}&run_objects={len(objects)}"
+    preflight_request = Request(preflight_url, data=b"", method="POST", headers={
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "read-sensor-zarr-publisher/1.0",
+    })
+    try:
+        with urlopen(preflight_request, timeout=120) as response:
+            budget = json.load(response)
+    except HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace")[:1000]
+        raise RuntimeError(f"R2 storage preflight refused upload: HTTP {error.code}: {body}") from error
     print(
         f"Uploading {len(objects)} immutable objects / {total_bytes / 1024 / 1024:.1f} MiB for {run_key}; "
-        "14-day lifecycle safety budget <= 6.6 GiB at four runs/day"
+        f"R2 projected {budget['projected_bytes'] / 1024 / 1024 / 1024:.2f} GiB / "
+        f"{budget['safety_ceiling_bytes'] / 1024 / 1024 / 1024:.0f} GiB project ceiling"
     )
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(args.workers, 16))) as pool:
         futures = [pool.submit(put, base_url, token, key, path.read_bytes(), content_type(path)) for key, path in objects]
