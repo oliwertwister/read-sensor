@@ -7,6 +7,10 @@ const state = {
   metric: config.defaultMetric,
   readings: [],
   chart: null,
+  sensorWindowMs: 24 * 60 * 60 * 1000,
+  sensorWindowKey: "24h",
+  sensorAverageMinutes: 0,
+  sensorTableRows: [],
   map: null,
   mapGrid: null,
 };
@@ -64,29 +68,54 @@ function updateAge() {
 
 
 const CPU_TIME_ZONE = "Europe/Berlin";
-const CPU_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CPU_SAMPLE_INTERVAL_MS = 5 * 60 * 1000;
 const CPU_GAP_THRESHOLD_MS = 7.5 * 60 * 1000;
+const SENSOR_TABLE_PREVIEW_LIMIT = 500;
+const SENSOR_WINDOWS = Object.freeze({
+  "1h": 60 * 60 * 1000,
+  "3h": 3 * 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
+  "12h": 12 * 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "3d": 3 * 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+});
 
-function formatCpuTick(date) {
+function sensorWindowLabel() {
+  const labels = {
+    "1h": "1 hour", "3h": "3 hours", "6h": "6 hours", "12h": "12 hours",
+    "24h": "24 hours", "3d": "3 days", "7d": "7 days", "30d": "30 days",
+  };
+  return labels[state.sensorWindowKey] || state.sensorWindowKey;
+}
+
+function formatCpuTick(date, spanMs) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: CPU_TIME_ZONE, hour: "2-digit", hourCycle: "h23",
-  }).format(date);
+  const options = spanMs <= 24 * 60 * 60 * 1000
+    ? { timeZone: CPU_TIME_ZONE, hour: "2-digit", hourCycle: "h23" }
+    : spanMs <= 3 * 24 * 60 * 60 * 1000
+      ? { timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short", hour: "2-digit", hourCycle: "h23" }
+      : { timeZone: CPU_TIME_ZONE, day: "2-digit", month: "short" };
+  return new Intl.DateTimeFormat("en-GB", options).format(date);
 }
 
 function cpuAxisTickValues(start, end) {
-  const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone: CPU_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23",
-  });
+  const span = end - start;
+  let step;
+  if (span <= 60 * 60 * 1000) step = 15 * 60 * 1000;
+  else if (span <= 3 * 60 * 60 * 1000) step = 30 * 60 * 1000;
+  else if (span <= 6 * 60 * 60 * 1000) step = 60 * 60 * 1000;
+  else if (span <= 12 * 60 * 60 * 1000) step = 2 * 60 * 60 * 1000;
+  else if (span <= 24 * 60 * 60 * 1000) step = 3 * 60 * 60 * 1000;
+  else if (span <= 3 * 24 * 60 * 60 * 1000) step = 12 * 60 * 60 * 1000;
+  else if (span <= 7 * 24 * 60 * 60 * 1000) step = 24 * 60 * 60 * 1000;
+  else if (span <= 14 * 24 * 60 * 60 * 1000) step = 2 * 24 * 60 * 60 * 1000;
+  else step = 5 * 24 * 60 * 60 * 1000;
+
+  const first = Math.ceil(start / step) * step;
   const values = [];
-  const firstWholeHour = Math.ceil(start / (60 * 60 * 1000)) * 60 * 60 * 1000;
-  for (let value = firstWholeHour; value <= end; value += 60 * 60 * 1000) {
-    const parts = Object.fromEntries(
-      formatter.formatToParts(new Date(value)).map((part) => [part.type, part.value]),
-    );
-    if (Number(parts.minute) === 0 && Number(parts.hour) % 3 === 0) values.push(value);
-  }
+  for (let value = first; value <= end; value += step) values.push(value);
   return values;
 }
 
@@ -103,71 +132,109 @@ function formatDuration(milliseconds) {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
-  return remainder ? `${hours} h ${remainder} min` : `${hours} h`;
+  if (hours < 48) return remainder ? `${hours} h ${remainder} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  const hourRemainder = hours % 24;
+  return hourRemainder ? `${days} d ${hourRemainder} h` : `${days} d`;
+}
+
+function sensorUnit(reading) {
+  const unit = reading?.unit || "";
+  return unit === "C" ? "°C" : unit;
+}
+
+function aggregateSensorRows(visible, windowStart) {
+  if (!state.sensorAverageMinutes) {
+    return visible.map(({ reading, time }) => ({
+      time,
+      value: Number(reading.value),
+      unit: sensorUnit(reading),
+      samples: 1,
+    }));
+  }
+
+  const intervalMs = state.sensorAverageMinutes * 60 * 1000;
+  const buckets = new Map();
+  for (const { reading, time } of visible) {
+    const bucketTime = Math.max(windowStart, Math.floor(time / intervalMs) * intervalMs);
+    let bucket = buckets.get(bucketTime);
+    if (!bucket) {
+      bucket = { time: bucketTime, total: 0, samples: 0, unit: sensorUnit(reading) };
+      buckets.set(bucketTime, bucket);
+    }
+    bucket.total += Number(reading.value);
+    bucket.samples += 1;
+    if (!bucket.unit) bucket.unit = sensorUnit(reading);
+  }
+  return [...buckets.values()]
+    .sort((a, b) => a.time - b.time)
+    .map((bucket) => ({
+      time: bucket.time,
+      value: bucket.total / bucket.samples,
+      unit: bucket.unit,
+      samples: bucket.samples,
+    }));
 }
 
 function cpuWindow(now = Date.now()) {
-  const start = now - CPU_WINDOW_MS;
+  const start = now - state.sensorWindowMs;
   const all = state.readings
     .map((reading) => ({ reading, time: readingTime(reading)?.getTime() }))
     .filter(({ time }) => Number.isFinite(time) && time <= now)
     .sort((a, b) => a.time - b.time);
   const visible = all.filter(({ time }) => time >= start);
-  const previous = all.filter(({ time }) => time < start).at(-1);
+  const seriesRows = aggregateSensorRows(visible, start);
+  const intervalMs = state.sensorAverageMinutes
+    ? state.sensorAverageMinutes * 60 * 1000
+    : CPU_SAMPLE_INTERVAL_MS;
+  const gapThresholdMs = state.sensorAverageMinutes
+    ? intervalMs * 1.5
+    : CPU_GAP_THRESHOLD_MS;
   const gaps = [];
 
-  if (!visible.length) {
+  if (!seriesRows.length) {
     gaps.push({ from: start, to: now, open: true });
   } else {
-    const first = visible[0];
-    const firstAnchor = previous ? previous.time : start;
-    if (first.time - firstAnchor > CPU_GAP_THRESHOLD_MS) {
-      const gapStart = previous ? previous.time + CPU_SAMPLE_INTERVAL_MS : start;
-      gaps.push({ from: Math.max(start, gapStart), to: first.time, open: false });
+    const first = seriesRows[0];
+    if (first.time - start > gapThresholdMs) {
+      gaps.push({ from: start, to: first.time, open: false });
     }
-
-    for (let index = 1; index < visible.length; index += 1) {
-      const before = visible[index - 1];
-      const after = visible[index];
-      if (after.time - before.time > CPU_GAP_THRESHOLD_MS) {
-        gaps.push({
-          from: before.time + CPU_SAMPLE_INTERVAL_MS,
-          to: after.time,
-          open: false,
-        });
+    for (let index = 1; index < seriesRows.length; index += 1) {
+      const before = seriesRows[index - 1];
+      const after = seriesRows[index];
+      if (after.time - before.time > gapThresholdMs) {
+        gaps.push({ from: before.time + intervalMs, to: after.time, open: false });
       }
     }
-
-    const last = visible.at(-1);
-    if (now - last.time > CPU_GAP_THRESHOLD_MS) {
-      gaps.push({
-        from: last.time + CPU_SAMPLE_INTERVAL_MS,
-        to: now,
-        open: true,
-      });
+    const last = seriesRows.at(-1);
+    if (now - last.time > gapThresholdMs) {
+      gaps.push({ from: last.time + intervalMs, to: now, open: true });
     }
   }
 
   const points = [];
-  visible.forEach(({ reading, time }, index) => {
-    const before = visible[index - 1];
-    if (before && time - before.time > CPU_GAP_THRESHOLD_MS) {
-      points.push({ x: before.time + ((time - before.time) / 2), y: null });
+  seriesRows.forEach((row, index) => {
+    const before = seriesRows[index - 1];
+    if (before && row.time - before.time > gapThresholdMs) {
+      points.push({ x: before.time + ((row.time - before.time) / 2), y: null });
     }
-    points.push({ x: time, y: Number(reading.value) });
+    points.push({ x: row.time, y: row.value });
   });
 
-  return { start, end: now, visible, points, gaps };
+  return { start, end: now, visible, seriesRows, points, gaps, intervalMs };
 }
 
 function updateCpuRange(timeline) {
   const el = $("cpuRange");
   if (!el) return;
-  const gapTotal = timeline.gaps.reduce((total, gap) => total + gap.to - gap.from, 0);
+  const gapTotal = timeline.gaps.reduce((total, gap) => total + Math.max(0, gap.to - gap.from), 0);
   const gapSummary = timeline.gaps.length
-    ? `${timeline.gaps.length} no-data ${timeline.gaps.length === 1 ? "period" : "periods"} · ${formatDuration(gapTotal)} downtime`
+    ? `${timeline.gaps.length} no-data ${timeline.gaps.length === 1 ? "period" : "periods"} · ${formatDuration(gapTotal)} total`
     : "No downtime detected";
-  el.textContent = `Sampling every 5 min · rolling 24 h · ${timeline.visible.length.toLocaleString()} readings received · ${gapSummary}`;
+  const aggregation = state.sensorAverageMinutes
+    ? `${state.sensorAverageMinutes} min average`
+    : "raw readings";
+  el.textContent = `Rolling ${sensorWindowLabel()} · ${aggregation} · ${timeline.visible.length.toLocaleString()} source readings · ${timeline.seriesRows.length.toLocaleString()} plotted points · ${gapSummary}`;
 }
 
 const cpuDowntimePlugin = {
@@ -201,6 +268,76 @@ const cpuDowntimePlugin = {
   },
 };
 
+function renderSensorHistory(timeline) {
+  const body = $("sensorHistory");
+  if (!body) return;
+  const rows = timeline.seriesRows;
+  state.sensorTableRows = rows;
+  body.replaceChildren();
+  const csvButton = $("sensorCsvDownload");
+  if (csvButton) csvButton.disabled = rows.length === 0;
+  const summary = $("sensorHistorySummary");
+  const preview = rows.slice(-SENSOR_TABLE_PREVIEW_LIMIT).reverse();
+  if (summary) {
+    const aggregation = state.sensorAverageMinutes ? `${state.sensorAverageMinutes} min averages` : "raw readings";
+    summary.textContent = rows.length > SENSOR_TABLE_PREVIEW_LIMIT
+      ? `${aggregation} · showing latest ${SENSOR_TABLE_PREVIEW_LIMIT.toLocaleString()} of ${rows.length.toLocaleString()} rows · CSV includes all rows`
+      : `${aggregation} · ${rows.length.toLocaleString()} rows in selected window`;
+  }
+  if (!preview.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.className = "muted";
+    cell.textContent = "No data in the selected window.";
+    row.append(cell);
+    body.append(row);
+    return;
+  }
+  for (const item of preview) {
+    const row = document.createElement("tr");
+    const time = document.createElement("td");
+    const value = document.createElement("td");
+    const samples = document.createElement("td");
+    const unit = document.createElement("td");
+    time.textContent = formatCpuTimestamp(new Date(item.time));
+    value.textContent = Number(item.value).toFixed(2);
+    samples.textContent = String(item.samples);
+    unit.textContent = item.unit || "—";
+    row.append(time, value, samples, unit);
+    body.append(row);
+  }
+}
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function downloadSensorCsv() {
+  const rows = state.sensorTableRows;
+  if (!rows.length) return;
+  const aggregation = state.sensorAverageMinutes ? `${state.sensorAverageMinutes}min_average` : "raw";
+  const header = ["timestamp", "device", "metric", "window", "aggregation_minutes", "value", "unit", "samples"];
+  const lines = [header.join(",")];
+  for (const row of rows) {
+    lines.push([
+      new Date(row.time).toISOString(), state.device, state.metric, state.sensorWindowKey,
+      state.sensorAverageMinutes || 0, Number(row.value).toFixed(6), row.unit || "", row.samples,
+    ].map(csvCell).join(","));
+  }
+  const blob = new Blob([`${lines.join("\n")}\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `${state.device}_${state.metric}_${state.sensorWindowKey}_${aggregation}_${stamp}.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function renderReadings() {
   const latest = latestReading();
   if (!latest) {
@@ -212,7 +349,7 @@ function renderReadings() {
     if ($("sensorMetric")) $("sensorMetric").textContent = state.metric.replaceAll("_", " ");
     setStatus("Waiting", "warning");
   } else {
-    const unit = latest.unit ? ` ${latest.unit === "C" ? "°C" : latest.unit}` : "";
+    const unit = latest.unit ? ` ${sensorUnit(latest)}` : "";
     const formattedValue = `${Number(latest.value).toFixed(1)}${unit}`;
     $("cpuNow").textContent = formattedValue;
     $("raw").textContent = JSON.stringify(latest, null, 2);
@@ -221,13 +358,20 @@ function renderReadings() {
     updateAge();
   }
 
-  renderSensorHistory();
   const timeline = cpuWindow();
   updateCpuRange(timeline);
+  renderSensorHistory(timeline);
+  const chartLabel = state.sensorAverageMinutes
+    ? `${state.metric.replaceAll("_", " ")} · ${state.sensorAverageMinutes} min average`
+    : state.metric.replaceAll("_", " ");
+  const unit = timeline.seriesRows.find((row) => row.unit)?.unit || sensorUnit(latest) || "";
   if (state.chart) {
+    state.chart.data.datasets[0].label = chartLabel;
     state.chart.data.datasets[0].data = timeline.points;
     state.chart.options.scales.x.min = timeline.start;
     state.chart.options.scales.x.max = timeline.end;
+    state.chart.options.scales.x.title.text = `Time (${CPU_TIME_ZONE})`;
+    state.chart.options.scales.y.title.text = unit || "Value";
     state.chart.options.plugins.cpuDowntime.gaps = timeline.gaps;
     state.chart.update("none");
     return;
@@ -238,7 +382,7 @@ function renderReadings() {
     data: {
       datasets: [
         {
-          label: "CPU °C",
+          label: chartLabel,
           data: timeline.points,
           borderColor: "#0969da",
           backgroundColor: "rgba(9, 105, 218, 0.07)",
@@ -264,9 +408,7 @@ function renderReadings() {
       interaction: { intersect: false, mode: "index" },
       plugins: {
         cpuDowntime: { gaps: timeline.gaps },
-        legend: {
-          labels: { color: "#24292f", boxWidth: 24, boxHeight: 2 },
-        },
+        legend: { labels: { color: "#24292f", boxWidth: 24, boxHeight: 2 } },
         tooltip: {
           backgroundColor: "rgba(36, 41, 47, 0.94)",
           displayColors: false,
@@ -275,6 +417,11 @@ function renderReadings() {
             title(items) {
               if (!items.length) return "";
               return formatCpuTimestamp(new Date(items[0].parsed.x));
+            },
+            label(item) {
+              if (item.parsed.y == null) return "No data";
+              const currentUnit = item.chart.options.scales.y.title.text === "Value" ? "" : item.chart.options.scales.y.title.text;
+              return `${item.dataset.label}: ${Number(item.parsed.y).toFixed(2)}${currentUnit ? ` ${currentUnit}` : ""}`;
             },
           },
         },
@@ -286,7 +433,7 @@ function renderReadings() {
           max: timeline.end,
           border: { color: "#d0d7de" },
           grid: { color: "rgba(27, 31, 36, 0.09)" },
-          title: { display: true, text: "Time (Europe/Berlin) · 3-hour marks", color: "#57606a" },
+          title: { display: true, text: `Time (${CPU_TIME_ZONE})`, color: "#57606a" },
           afterBuildTicks(scale) {
             scale.ticks = cpuAxisTickValues(scale.min, scale.max).map((value) => ({ value }));
           },
@@ -295,7 +442,7 @@ function renderReadings() {
             maxRotation: 0,
             autoSkip: false,
             callback(value) {
-              return formatCpuTick(new Date(value));
+              return formatCpuTick(new Date(value), state.sensorWindowMs);
             },
           },
         },
@@ -303,20 +450,44 @@ function renderReadings() {
           border: { color: "#d0d7de" },
           grid: { color: "rgba(27, 31, 36, 0.09)" },
           ticks: { color: "#57606a" },
-          title: { display: true, text: "°C", color: "#57606a" },
+          title: { display: true, text: unit || "Value", color: "#57606a" },
         },
       },
     },
   });
 }
 
+function historyQueryLimit() {
+  const sourceInterval = CPU_SAMPLE_INTERVAL_MS;
+  const expected = Math.ceil((state.sensorWindowMs + (2 * sourceInterval)) / sourceInterval) + 50;
+  return Math.min(config.maxHistoryLimit || 10000, Math.max(288, expected));
+}
+
+function trimHistoryBuffer(now = Date.now()) {
+  const margin = Math.max(
+    CPU_GAP_THRESHOLD_MS * 2,
+    state.sensorAverageMinutes * 60 * 1000 * 2,
+  );
+  const cutoff = now - state.sensorWindowMs - margin;
+  state.readings = state.readings.filter((reading) => {
+    const time = readingTime(reading)?.getTime();
+    return Number.isFinite(time) && time >= cutoff;
+  });
+}
+
 async function loadHistory() {
   setStatus("Loading…");
+  const margin = Math.max(
+    CPU_GAP_THRESHOLD_MS * 2,
+    state.sensorAverageMinutes * 60 * 1000 * 2,
+  );
+  const since = new Date(Date.now() - state.sensorWindowMs - margin).toISOString();
   try {
     const payload = await fetchJson("/api/v1/history", {
       device: state.device,
       metric: state.metric,
-      limit: config.historyLimit,
+      since,
+      limit: historyQueryLimit(),
     });
     state.readings = payload.readings;
     renderReadings();
@@ -341,15 +512,33 @@ async function pollLatest() {
     const previous = latestReading();
     if (!previous || previous.recorded_at !== reading.recorded_at) {
       state.readings.push(reading);
-      state.readings = state.readings.slice(-config.historyLimit);
-      renderReadings();
-    } else {
-      renderReadings();
+      state.readings.sort((a, b) => readingTime(a) - readingTime(b));
+      trimHistoryBuffer();
     }
+    renderReadings();
   } catch (error) {
     console.error("latest_failed", error);
     setStatus("Telemetry API unavailable", "error");
   }
+}
+
+function initSensorChartControls() {
+  const windowSelect = $("sensorWindow");
+  const averageSelect = $("sensorAverage");
+  windowSelect?.addEventListener("change", async () => {
+    const key = windowSelect.value;
+    if (!SENSOR_WINDOWS[key]) return;
+    state.sensorWindowKey = key;
+    state.sensorWindowMs = SENSOR_WINDOWS[key];
+    state.readings = [];
+    await loadHistory();
+  });
+  averageSelect?.addEventListener("change", () => {
+    const value = Number(averageSelect.value);
+    state.sensorAverageMinutes = [0, 5, 10, 15, 20, 25].includes(value) ? value : 0;
+    renderReadings();
+  });
+  $("sensorCsvDownload")?.addEventListener("click", downloadSensorCsv);
 }
 
 async function loadDevices() {
@@ -774,7 +963,7 @@ function initSatellite() {
 }
 
 function setSensorMode(mode) {
-  const validModes = new Set(["overview", "chart", "history"]);
+  const validModes = new Set(["overview", "chart"]);
   if (!validModes.has(mode)) return;
   document.querySelectorAll("[data-sensor-mode]").forEach((button) => {
     const active = button.dataset.sensorMode === mode;
@@ -790,35 +979,6 @@ function initSensorModes() {
   document.querySelectorAll("[data-sensor-mode]").forEach((button) => {
     button.addEventListener("click", () => setSensorMode(button.dataset.sensorMode));
   });
-}
-
-function renderSensorHistory() {
-  const body = $("sensorHistory");
-  if (!body) return;
-  body.replaceChildren();
-  const rows = state.readings.slice(-30).reverse();
-  if (!rows.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 3;
-    cell.className = "muted";
-    cell.textContent = "No data yet.";
-    row.append(cell);
-    body.append(row);
-    return;
-  }
-  for (const reading of rows) {
-    const row = document.createElement("tr");
-    const time = document.createElement("td");
-    const value = document.createElement("td");
-    const unit = document.createElement("td");
-    const date = readingTime(reading);
-    time.textContent = date ? date.toLocaleString([], { dateStyle: "short", timeStyle: "medium" }) : "—";
-    value.textContent = Number(reading.value).toFixed(1);
-    unit.textContent = reading.unit === "C" ? "°C" : (reading.unit || "—");
-    row.append(time, value, unit);
-    body.append(row);
-  }
 }
 
 function initTabs() {
@@ -942,6 +1102,7 @@ function initMap() {
 async function init() {
   initTabs();
   initSensorModes();
+  initSensorChartControls();
   initAviationSearch();
   initIconCharts();
   initSatellite();

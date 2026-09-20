@@ -939,7 +939,7 @@ a { color: #58a6ff; }
 .sensor-status.error { border-color:#da3633; color:#f85149; background:rgba(218,54,51,.10); }
 #deviceSelect { width:100%; min-width:0; min-height:48px; border-radius:14px; padding:0 46px 0 16px; border-color:#3d444d; background-color:#161b22; font-size:1rem; font-weight:600; box-shadow:0 8px 24px rgba(1,4,9,.16); }
 #deviceSelect:hover,#deviceSelect:focus { border-color:#58a6ff; outline:none; box-shadow:0 0 0 3px rgba(88,166,255,.13),0 8px 24px rgba(1,4,9,.18); }
-.sensor-mode-selector { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; padding:4px; border:1px solid #30363d; border-radius:16px; background:#0b0f14; box-shadow:inset 0 1px 0 rgba(255,255,255,.025); }
+.sensor-mode-selector { display:grid; grid-template-columns:repeat(2,1fr); gap:4px; padding:4px; border:1px solid #30363d; border-radius:16px; background:#0b0f14; box-shadow:inset 0 1px 0 rgba(255,255,255,.025); }
 .sensor-mode-selector button { min-height:42px; padding:9px 16px; border:1px solid transparent; border-radius:12px; background:transparent; color:#8b949e; font-weight:650; transition:background .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease; }
 .sensor-mode-selector button:hover { color:#e6edf3; background:#161b22; border-color:#30363d; }
 .sensor-mode-selector button.active { color:#f0f6fc; border-color:#1f6feb; background:linear-gradient(180deg,rgba(31,111,235,.28),rgba(31,111,235,.16)); box-shadow:inset 0 0 0 1px rgba(88,166,255,.18),0 4px 14px rgba(0,0,0,.18); }
@@ -1154,3 +1154,55 @@ a { color: #58a6ff; }
 .synop-temperature-tooltip strong { color:#f0f6fc; font-weight:650; }
 .synop-temperature-tooltip span { color:#79c0ff; font-variant-numeric:tabular-nums; }
 .synop-temperature-tooltip::before { border-top-color:#3d444d; }
+
+
+/* Sensor chart history controls */
+.chart-history-controls {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(180px,260px));
+  gap:12px;
+  margin:0 0 16px;
+}
+.chart-history-controls label {
+  display:grid;
+  gap:6px;
+  color:#8b949e;
+  font-size:.78rem;
+  font-weight:600;
+}
+.chart-history-controls select {
+  width:100%;
+  min-height:42px;
+  padding:8px 38px 8px 12px;
+  border:1px solid #3d444d;
+  border-radius:10px;
+  background:#161b22;
+  color:#e6edf3;
+  font:inherit;
+  font-weight:600;
+}
+.chart-history-controls select:hover,.chart-history-controls select:focus {
+  border-color:#58a6ff;
+  outline:none;
+  box-shadow:0 0 0 3px rgba(88,166,255,.12);
+}
+.sensor-history-section { margin-top:28px; }
+.sensor-history-heading > div { display:grid; gap:4px; }
+.history-download-button {
+  min-height:38px;
+  padding:8px 13px;
+  border:1px solid #3d444d;
+  border-radius:9px;
+  background:#21262d;
+  color:#e6edf3;
+  font-weight:650;
+}
+.history-download-button:hover { border-color:#58a6ff; background:#2d333b; }
+.history-download-button:disabled { opacity:.5; cursor:not-allowed; border-color:#30363d; background:#161b22; }
+.sensor-history-table-wrap { max-height:520px; }
+.sensor-history-table thead { position:sticky; top:0; z-index:1; }
+@media(max-width:680px){
+  .chart-history-controls { grid-template-columns:1fr; }
+  .sensor-history-heading { align-items:stretch; flex-direction:column; }
+  .history-download-button { width:100%; }
+}

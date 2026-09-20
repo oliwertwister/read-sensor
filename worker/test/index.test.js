@@ -176,6 +176,34 @@ test("valid samples are stored once and returned through history and devices", a
   assert.equal(devicesBody.devices[0].label, "Sensor node");
 });
 
+test("history supports ranged queries and extended limits", async () => {
+  const now = Date.now();
+  const rows = [
+    [41, new Date(now - 3 * 60 * 60 * 1000).toISOString()],
+    [42, new Date(now - 45 * 60 * 1000).toISOString()],
+    [43, new Date(now - 10 * 60 * 1000).toISOString()],
+  ];
+  for (const [value, recordedAt] of rows) {
+    sqlite.prepare(
+      "INSERT INTO readings(device_id, metric, value, unit, recorded_at) VALUES(?, ?, ?, ?, ?)",
+    ).run(DEVICE, "cpu_temperature", value, "C", recordedAt);
+  }
+
+  const since = new Date(now - 60 * 60 * 1000).toISOString();
+  const ranged = await worker.fetch(
+    request(`/api/v1/history?device=${DEVICE}&metric=cpu_temperature&since=${encodeURIComponent(since)}&limit=10000`),
+    env,
+  );
+  assert.equal(ranged.status, 200);
+  const body = await ranged.json();
+  assert.equal(body.readings.length, 2);
+  assert.deepEqual(body.readings.map((reading) => reading.value), [42, 43]);
+  assert.equal(body.since, since);
+
+  const invalid = await worker.fetch(request("/api/v1/history?since=not-a-date"), env);
+  assert.equal(invalid.status, 400);
+});
+
 test("a device token cannot impersonate another device", async () => {
   const response = await worker.fetch(
     ingestRequest({

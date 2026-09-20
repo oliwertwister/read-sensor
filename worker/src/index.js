@@ -1,7 +1,7 @@
 const DEFAULT_DEVICE = "sensor-node-01";
 const DEFAULT_METRIC = "cpu_temperature";
 const DEFAULT_HISTORY_LIMIT = 288;
-const MAX_HISTORY_LIMIT = 2016;
+const MAX_HISTORY_LIMIT = 10000;
 const MAX_BODY_BYTES = 4096;
 const DEFAULT_RETENTION_DAYS = 30;
 const GITHUB_API_VERSION = "2026-03-10";
@@ -108,6 +108,13 @@ function historyLimit(value) {
   return Math.min(Math.max(Number(value), 1), MAX_HISTORY_LIMIT);
 }
 
+function historyTimestamp(value) {
+  if (value === null) return null;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return undefined;
+  return new Date(timestamp).toISOString();
+}
+
 async function ingest(request, env) {
   const token = bearerToken(request);
   if (!token) return json(request, env, { error: "unauthorized" }, 401);
@@ -181,23 +188,37 @@ async function history(request, env, url) {
   const device = url.searchParams.get("device") || DEFAULT_DEVICE;
   const metric = url.searchParams.get("metric") || DEFAULT_METRIC;
   const limit = historyLimit(url.searchParams.get("limit"));
-  if (!validName(device) || !validName(metric) || limit === null) {
+  const since = historyTimestamp(url.searchParams.get("since"));
+  const until = historyTimestamp(url.searchParams.get("until"));
+  if (
+    !validName(device) || !validName(metric) || limit === null ||
+    since === undefined || until === undefined ||
+    (since && until && since > until)
+  ) {
     return json(request, env, { error: "invalid_query" }, 400);
   }
+
+  const clauses = ["device_id = ?", "metric = ?"];
+  const values = [device, metric];
+  if (since) { clauses.push("recorded_at >= ?"); values.push(since); }
+  if (until) { clauses.push("recorded_at <= ?"); values.push(until); }
+  values.push(limit);
 
   const { results } = await env.DB.prepare(
     `SELECT device_id, metric, value, unit, recorded_at
      FROM readings
-     WHERE device_id = ? AND metric = ?
+     WHERE ${clauses.join(" AND ")}
      ORDER BY recorded_at DESC
      LIMIT ?`,
   )
-    .bind(device, metric, limit)
+    .bind(...values)
     .all();
 
   return json(request, env, {
     device_id: device,
     metric,
+    since,
+    until,
     readings: results.reverse(),
   });
 }
