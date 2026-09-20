@@ -16,3 +16,5 @@ worker/.wrangler/
 
 satellite/output/
 synop/output/
+
+model/output/

@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=normalized-temperature-1">
+    <link rel="stylesheet" href="style.css?v=icon-synoptic-1">
   </head>
   <body>
     <header>
@@ -84,13 +84,44 @@
 
       <section id="models" class="tab">
         <div class="model-heading">
-          <div><h2 id="iconTitle">DWD ICON-EU model charts</h2><p class="muted">Static numerical forecast maps · Central Europe · latest DWD model run</p></div>
-          <div class="model-controls">
-            <label>Field <select id="iconProduct"><option value="win">10 m wind</option><option value="ttc">2 m temperature</option><option value="rsa">6 h precipitation</option></select></label>
-            <label>Forecast <select id="iconPeriod"><option value="006012">+6 / +12 h</option><option value="018024">+18 / +24 h</option><option value="030036">+30 / +36 h</option><option value="042048">+42 / +48 h</option></select></label>
+          <div>
+            <h2 id="iconTitle">DWD ICON-EU</h2>
+            <p class="muted">Native GRIB2 analysis + official DWD reference charts</p>
           </div>
         </div>
-        <figure class="model-figure"><img id="iconChart" alt="DWD ICON-EU numerical weather forecast chart"><figcaption id="iconCaption" class="muted"></figcaption></figure>
+
+        <section class="icon-derived" aria-labelledby="iconDerivedTitle">
+          <div class="icon-derived-heading">
+            <div>
+              <h3 id="iconDerivedTitle">Current synoptic overlay</h3>
+              <p class="muted">MTG/FCI satellite background + ICON-EU PMSL, 2 m temperature and 10 m wind</p>
+            </div>
+            <span id="iconDerivedFreshness" class="status">Loading…</span>
+          </div>
+          <figure class="model-figure icon-derived-figure">
+            <img id="iconDerivedChart" src="model/synoptic.webp" alt="ICON-EU isobars, isotherms and wind over MTG FCI satellite imagery">
+            <figcaption id="iconDerivedCaption" class="muted">Loading model metadata…</figcaption>
+          </figure>
+          <div class="icon-derived-meta">
+            <span><small>Model run</small><strong id="iconRunTime">—</strong></span>
+            <span><small>Forecast</small><strong id="iconLeadTime">—</strong></span>
+            <span><small>Valid</small><strong id="iconValidTime">—</strong></span>
+            <span><small>Satellite</small><strong id="iconSatelliteTime">—</strong></span>
+            <span><small>Grid</small><strong id="iconGridSpacing">—</strong></span>
+          </div>
+          <p class="muted wx-source">Numerical fields: <a href="https://opendata.dwd.de/weather/nwp/icon-eu/grib/" target="_blank" rel="noreferrer">DWD ICON-EU Open Data</a> · satellite background: <a href="https://view.eumetsat.int/" target="_blank" rel="noreferrer">EUMETSAT EUMETView</a>.</p>
+        </section>
+
+        <section class="system-section icon-reference" aria-labelledby="iconReferenceTitle">
+          <div class="model-heading">
+            <div><h3 id="iconReferenceTitle">Official DWD reference charts</h3><p class="muted">Static Central Europe forecast products published directly by DWD</p></div>
+            <div class="model-controls">
+              <label>Field <select id="iconProduct"><option value="win">10 m wind</option><option value="ttc">2 m temperature</option><option value="rsa">6 h precipitation</option></select></label>
+              <label>Forecast <select id="iconPeriod"><option value="006012">+6 / +12 h</option><option value="018024">+18 / +24 h</option><option value="030036">+30 / +36 h</option><option value="042048">+42 / +48 h</option></select></label>
+            </div>
+          </div>
+          <figure class="model-figure"><img id="iconChart" alt="DWD ICON-EU numerical weather forecast chart"><figcaption id="iconCaption" class="muted"></figcaption></figure>
+        </section>
       </section>
 
       <section id="synop" class="tab">
@@ -306,7 +337,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=normalized-temperature-1"></script>
+    <script src="app.js?v=icon-synoptic-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

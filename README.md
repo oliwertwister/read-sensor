@@ -13,7 +13,7 @@ The project deliberately separates a static public frontend from data collection
 - **Sensors** — D1-backed telemetry with selectable latest-N or rolling-window history, optional 5/10/15/20/25-minute averaging, CSV export, a time-series chart, and a normalized temperature-distribution line plot.
 - **Berlin Weather** — current conditions from Open-Meteo.
 - **Aviation Weather** — worldwide station search, map selection, and METAR/TAF retrieval through the Aviation Weather Center Data API.
-- **DWD ICON-EU** — model-chart viewing. This is currently a chart/product view, not yet a local GRIB2 analysis pipeline.
+- **DWD ICON-EU** — quantitative native-GRIB2 synoptic overlay (PMSL isobars, 2 m isotherms, 10 m wind) over the current MTG/FCI satellite background, plus official DWD reference charts.
 - **SYNOP** — worldwide WMO station search plus a recent-report map assembled from DWD SYNOP feeds; selected raw `AAXX` reports are decoded in the browser when available.
 - **Satellite** — EUMETSAT EUMETView WMS imagery for MTG/FCI, rendered autonomously with a coordinate grid, country boundaries, and Berlin marker.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid and local geometry loading.
@@ -40,14 +40,17 @@ This distinction matters: the WMS path is appropriate for a zero-cost visual das
 
 ## Numerical model analysis path
 
-For actual quantitative atmospheric fields, the intended source is DWD ICON-EU GRIB2 rather than pixels extracted from a rendered chart. DWD Open Data publishes variables such as `t_2m` and `pmsl` as GRIB2 products. The planned processing stack is:
+The first quantitative ICON-EU pipeline is now implemented in [`model/render_icon_synoptic.py`](model/render_icon_synoptic.py); details are in [`model/README.md`](model/README.md). It uses native DWD ICON-EU regular-lat/lon GRIB2 fields rather than extracting values from rendered charts. The current processing stack is:
 
-1. download only the required ICON-EU run, forecast step, variable, and geographic subset where practical;
-2. decode GRIB2 with **ecCodes/cfgrib**;
-3. expose fields as labelled **xarray** `DataArray`/`Dataset` objects;
-4. use **Dask** only where chunking/lazy execution is materially useful;
-5. perform projection/resampling/interpolation where required;
-6. generate contours and derived products with Matplotlib/Cartopy or export compact gridded/vector products for the browser.
+1. discover the freshest complete ICON-EU run/lead combination;
+2. download only `t_2m`, `pmsl`, `u_10m`, and `v_10m`;
+3. decode GRIB2 with **ecCodes/cfgrib** into **xarray** arrays;
+4. normalize longitude coordinates and subset the Europe display extent;
+5. convert temperature and pressure to display units;
+6. contour PMSL and temperature directly on the regular model grid and thin wind vectors for display;
+7. rasterize the derived overlay onto the current satellite background.
+
+**Dask is not used yet** because this four-field single-step workload fits comfortably in memory. It remains appropriate for later multi-file/multi-time native satellite or model workflows.
 
 This supports real meteorological plotting such as:
 

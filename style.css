@@ -1270,3 +1270,55 @@ a { color: #58a6ff; }
   .sensor-distribution-heading { align-items:stretch; flex-direction:column; }
   .distribution-toggle { width:max-content; }
 }
+
+/* Quantitative ICON-EU synoptic product */
+.icon-derived {
+  margin-top:18px;
+  padding:18px;
+  border:1px solid #30363d;
+  border-radius:14px;
+  background:#0d1117;
+}
+.icon-derived-heading {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:12px;
+}
+.icon-derived-heading h3 { margin:0 0 4px; }
+.icon-derived-heading p { margin:0; }
+.icon-derived-figure { margin:0; }
+.icon-derived-figure img {
+  width:100%;
+  height:auto;
+  display:block;
+  border:1px solid #30363d;
+  border-radius:12px;
+  background:#161b22;
+}
+.icon-derived-figure figcaption { margin-top:8px; line-height:1.45; }
+.icon-derived-meta {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+.icon-derived-meta span {
+  display:grid;
+  gap:3px;
+  padding:10px 12px;
+  border:1px solid #30363d;
+  border-radius:10px;
+  background:#161b22;
+}
+.icon-derived-meta small { color:#8b949e; font-size:.72rem; text-transform:uppercase; letter-spacing:.04em; }
+.icon-derived-meta strong { color:#e6edf3; font-size:.88rem; font-variant-numeric:tabular-nums; }
+.icon-reference { margin-top:30px; }
+@media(max-width:760px){
+  .icon-derived-heading { flex-direction:column; }
+  .icon-derived-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:480px){
+  .icon-derived-meta { grid-template-columns:1fr; }
+}

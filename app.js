@@ -1113,10 +1113,46 @@ function updateIconChart() {
   $("iconChart").alt = `DWD ICON-EU ${meta.label} forecast for Central Europe`;
   $("iconCaption").textContent = `${meta.label} · ${$("iconPeriod").selectedOptions[0].textContent} · DWD ICON-EU. The PNG itself contains model initialization and valid times.`;
 }
+
+function iconTime(value) {
+  const date = new Date(value || "");
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC", day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(date) + " UTC";
+}
+
+async function loadIconSynoptic() {
+  const freshness = $("iconDerivedFreshness");
+  try {
+    const response = await fetch(`model/latest.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const meta = await response.json();
+    $("iconDerivedChart").src = `model/synoptic.webp?t=${Date.now()}`;
+    $("iconRunTime").textContent = iconTime(meta.run_at);
+    $("iconLeadTime").textContent = `+${meta.forecast_hour ?? "—"} h`;
+    $("iconValidTime").textContent = iconTime(meta.valid_at);
+    $("iconSatelliteTime").textContent = iconTime(meta.satellite_observed_at);
+    $("iconGridSpacing").textContent = meta.grid_spacing_degrees == null ? "—" : `${meta.grid_spacing_degrees}°`;
+    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 5} degrees_celsius · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
+    const valid = new Date(meta.valid_at || "");
+    const ageHours = Number.isNaN(valid.getTime()) ? NaN : Math.abs(Date.now() - valid.getTime()) / 3600000;
+    freshness.textContent = Number.isFinite(ageHours) ? `${ageHours.toFixed(1)} h from valid time` : "Loaded";
+    freshness.className = `status ${Number.isFinite(ageHours) && ageHours <= 4 ? "ok" : "warning"}`;
+  } catch (error) {
+    console.error("icon_synoptic_failed", error);
+    freshness.textContent = "Unavailable";
+    freshness.className = "status error";
+    $("iconDerivedCaption").textContent = "Quantitative ICON-EU overlay unavailable.";
+  }
+}
 function initIconCharts() {
   $("iconProduct").addEventListener("change", updateIconChart);
   $("iconPeriod").addEventListener("change", updateIconChart);
   updateIconChart();
+  loadIconSynoptic();
+  setInterval(loadIconSynoptic, 15 * 60 * 1000);
 }
 
 

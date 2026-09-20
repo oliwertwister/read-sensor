@@ -53,6 +53,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: model/requirements.txt
 
       - name: Build live SYNOP map layer
         run: |
@@ -62,10 +64,14 @@ jobs:
           fi
           python synop/update_live.py --catalog synop/stations.json --output synop/output/live.json
 
+      - name: Install geospatial render dependencies
+        run: python -m pip install --disable-pip-version-check --quiet -r model/requirements.txt
+
       - name: Render latest Meteosat products
-        run: |
-          python -m pip install --disable-pip-version-check --quiet pillow
-          python satellite/render_satellite.py --output satellite/output
+        run: python satellite/render_satellite.py --output satellite/output
+
+      - name: Render quantitative ICON-EU synoptic product
+        run: python model/render_icon_synoptic.py --output model/output --background satellite/output/geocolour.webp
 
       - name: Stage public files
         run: |
@@ -74,6 +80,8 @@ jobs:
           cp -R vendor _site/
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/
+          mkdir -p _site/model
+          cp -R model/output/. _site/model/
           mkdir -p _site/synop
           cp synop/stations.json _site/synop/latest.json
           cp synop/output/live.json _site/synop/live.json
