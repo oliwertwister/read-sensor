@@ -16,8 +16,17 @@ The build discovers the freshest complete regular-lat/lon run and chooses the fo
 - `RELHUM_2M` - 2 m relative humidity;
 - `CLCT` - total cloud cover;
 - `TOT_PREC` - accumulated precipitation from model initialization to valid time;
-- pressure-level `T` at 850 hPa - K to deg C;
-- pressure-level `FI` at 500 hPa - geopotential converted to geopotential height in decametres (`dam`), with one-decimal value precision in the interactive query display.
+- pressure-level `T` at 850, 700, and 500 hPa - K to `degrees_celsius`;
+- pressure-level `FI` at 850, 700, and 500 hPa - geopotential converted to geopotential height in decametres (`dam`), with one-decimal query precision.
+
+
+The published model cube is therefore currently bounded as:
+
+```text
+time (3) × pressure_level (850/700/500 hPa) × pressure_variable (temperature/geopotential height) × latitude × longitude
+```
+
+Surface fields remain separate physical vertical coordinates rather than being forced into the pressure-level axis.
 
 The selected regular-lat/lon product currently has 0.0625 degree grid spacing over the useful ICON-EU domain. Longitudes are normalized to -180..180 and latitude rows are stored north-to-south for browser raster alignment.
 

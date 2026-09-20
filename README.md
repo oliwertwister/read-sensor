@@ -13,7 +13,7 @@ The project deliberately separates a static public frontend from data collection
 - **Sensors** — D1-backed telemetry with selectable latest-N or rolling-window history, optional 5/10/15/20/25-minute averaging, CSV export, a time-series chart, and a normalized temperature-distribution line plot.
 - **Berlin Weather** — current conditions from Open-Meteo.
 - **Aviation Weather** — worldwide station search, map selection, and METAR/TAF retrieval through the Aviation Weather Center Data API.
-- **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields are T2M, PMSL, RH2M, total cloud cover, accumulated precipitation, T850, Z500, and 10 m wind.
+- **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields are T2M, PMSL, RH2M, total cloud cover, accumulated precipitation, 10 m wind, plus temperature and geopotential height on the bounded 850/700/500 hPa pressure dimension.
 - **SYNOP** — worldwide WMO station search plus a recent-report map assembled from DWD SYNOP feeds; selected raw `AAXX` reports are decoded in the browser when available.
 - **Satellite** — EUMETSAT EUMETView WMS imagery for MTG/FCI, rendered autonomously with a coordinate grid, country boundaries, and Berlin marker.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid and local geometry loading.
@@ -51,7 +51,7 @@ The quantitative ICON-EU build is orchestrated by [`model/render_icon_products.p
 7. generate the legacy compact satellite + isobar/isotherm/wind static synoptic product from the same build;
 8. let Leaflet compose the interactive layers in the browser rather than flattening them into one image.
 
-**Dask is not used yet** because the current single-valid-time, Europe-subset workload still fits comfortably in memory. It remains appropriate for later multi-time native FCI/model workflows where lazy loading and chunked computation materially reduce memory pressure.
+**Dask is not used yet** because the current bounded three-time/three-pressure-level workload is processed sequentially and still fits comfortably in memory. It remains appropriate for substantially larger time/pressure/channel cubes where lazy loading and chunked computation materially reduce memory pressure.
 
 ### Interactive field explorer and map engine
 

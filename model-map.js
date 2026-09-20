@@ -9,13 +9,14 @@
     rows: new Map(),
     timeline: null,
     currentStepIndex: 0,
+    selectedPressureLevel: null,
     layerPreferences: new Map(),
     switchSerial: 0,
     initializing: null,
   };
 
   const iconEl = (id) => document.getElementById(id);
-  const FIELD_ORDER = ["t2m", "pmsl", "rh2m", "cloud", "precip", "t850", "z500", "wind"];
+  const FIELD_ORDER = ["t2m", "pmsl", "rh2m", "cloud", "precip", "wind"];
 
   function modelTime(value) {
     const date = new Date(value || "");
@@ -298,6 +299,7 @@
     container.replaceChildren();
     const groups = new Map();
     for (const def of iconModelState.meta.layers) {
+      if (def.pressure_level_hpa != null && Number(def.pressure_level_hpa) !== Number(iconModelState.selectedPressureLevel)) continue;
       if (!groups.has(def.group)) groups.set(def.group, []);
       groups.get(def.group).push(def);
     }
@@ -312,6 +314,46 @@
       container.append(group);
     }
   }
+  function populatePressureControl() {
+    const select = iconEl("iconPressureLevel");
+    const levels = iconModelState.meta?.pressure_levels_hpa || [];
+    if (!select) return;
+    select.replaceChildren();
+    for (const level of levels) {
+      const option = document.createElement("option");
+      option.value = String(level);
+      option.textContent = `${level} hPa`;
+      select.append(option);
+    }
+    const fallback = iconModelState.meta?.default_pressure_level_hpa ?? levels[0] ?? null;
+    if (iconModelState.selectedPressureLevel == null || !levels.includes(Number(iconModelState.selectedPressureLevel))) {
+      iconModelState.selectedPressureLevel = fallback;
+    }
+    if (iconModelState.selectedPressureLevel != null) select.value = String(iconModelState.selectedPressureLevel);
+  }
+
+  async function switchPressureLevel(level) {
+    const next = Number(level);
+    if (!Number.isFinite(next) || next === Number(iconModelState.selectedPressureLevel)) return;
+    captureLayerPreferences();
+    for (const [id, instance] of [...iconModelState.instances.entries()]) {
+      const def = iconModelState.meta.layers.find((item) => item.id === id);
+      if (def?.pressure_level_hpa != null && iconModelState.map.hasLayer(instance)) {
+        iconModelState.map.removeLayer(instance);
+        iconModelState.instances.delete(id);
+      }
+    }
+    iconModelState.selectedPressureLevel = next;
+    iconModelState.rows.clear();
+    buildLayerPanel();
+    for (const def of iconModelState.meta.layers) {
+      if (Number(def.pressure_level_hpa) !== next) continue;
+      const row = iconModelState.rows.get(def.id);
+      if (row?.querySelector('input[type="checkbox"]')?.checked) await setLayerEnabled(def, true);
+    }
+    setMapStatus(`Pressure level ${next} hPa ready`, "ok");
+  }
+
   function captureLayerPreferences() {
     for (const def of iconModelState.meta?.layers || []) {
       const row = iconModelState.rows.get(def.id);
@@ -359,6 +401,7 @@
       iconModelState.meta = nextMeta;
       iconModelState.currentStepIndex = index;
       updateModelMetaCards();
+      populatePressureControl();
       buildLayerPanel();
       for (const def of nextMeta.layers) {
         const row = iconModelState.rows.get(def.id);
@@ -444,7 +487,16 @@
       const checked = row?.querySelector('input[type="checkbox"]')?.checked;
       if (checked) ids.add(def.field);
     }
-    return FIELD_ORDER.filter((fieldId) => ids.has(fieldId));
+    const surface = FIELD_ORDER.filter((fieldId) => ids.has(fieldId));
+    const pressure = [...ids].filter((fieldId) => {
+      const field = iconModelState.meta.fields[fieldId];
+      return field?.pressure_level_hpa != null;
+    }).sort((a, b) => {
+      const av = iconModelState.meta.fields[a]?.pressure_variable || "";
+      const bv = iconModelState.meta.fields[b]?.pressure_variable || "";
+      return av.localeCompare(bv);
+    });
+    return [...surface, ...pressure];
   }
 
   function formatPointCoordinate(latlng) {
@@ -530,8 +582,11 @@
         iconModelState.currentStepIndex = Number(iconModelState.timeline?.current_index ?? 0);
         updateModelMetaCards();
         populateForecastTimeControl();
+        populatePressureControl();
         const forecastSelect = iconEl("iconForecastTime");
         forecastSelect?.addEventListener("change", () => switchForecastTime(Number(forecastSelect.value)));
+        const pressureSelect = iconEl("iconPressureLevel");
+        pressureSelect?.addEventListener("change", () => switchPressureLevel(pressureSelect.value));
 
         buildLayerPanel();
         const map = makeMap();

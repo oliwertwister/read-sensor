@@ -30,6 +30,10 @@ FIELD_SPECS = {
     "clct": {"directory": "clct", "kind": "single-level", "variable": "CLCT"},
     "tot_prec": {"directory": "tot_prec", "kind": "single-level", "variable": "TOT_PREC"},
     "t_850": {"directory": "t", "kind": "pressure-level", "level": "850", "variable": "T"},
+    "t_700": {"directory": "t", "kind": "pressure-level", "level": "700", "variable": "T"},
+    "t_500": {"directory": "t", "kind": "pressure-level", "level": "500", "variable": "T"},
+    "fi_850": {"directory": "fi", "kind": "pressure-level", "level": "850", "variable": "FI"},
+    "fi_700": {"directory": "fi", "kind": "pressure-level", "level": "700", "variable": "FI"},
     "fi_500": {"directory": "fi", "kind": "pressure-level", "level": "500", "variable": "FI"},
 }
 
@@ -42,12 +46,12 @@ DISPLAY_SPECS = {
     "t2m": {
         "label": "2 m temperature", "unit": "degrees_celsius", "cmap": "coolwarm",
         "vmin": -20.0, "vmax": 40.0, "contours": list(np.arange(-40, 42, 2)),
-        "line_color": "#101010", "decimals": 1,
+        "line_color": "#101010", "decimals": 1, "label_every": 4,
     },
     "pmsl": {
         "label": "Mean sea-level pressure", "unit": "hPa", "cmap": "viridis",
         "vmin": 960.0, "vmax": 1040.0, "contours": list(np.arange(940, 1061, 4)),
-        "line_color": "#ffffff", "decimals": 1,
+        "line_color": "#ffffff", "decimals": 1, "label_every": 8,
     },
     "rh2m": {
         "label": "2 m relative humidity", "unit": "%", "cmap": "YlGnBu",
@@ -64,22 +68,43 @@ DISPLAY_SPECS = {
         "vmin": 0.0, "vmax": 30.0, "contours": [0.5, 1, 2, 5, 10, 20, 30, 50],
         "line_color": "#1261a0", "decimals": 1,
     },
-    "t850": {
-        "label": "850 hPa temperature", "unit": "degrees_celsius", "cmap": "coolwarm",
-        "vmin": -30.0, "vmax": 30.0, "contours": list(np.arange(-40, 36, 5)),
-        "line_color": "#6d1f1f", "decimals": 1,
-    },
-    "z500": {
-        "label": "500 hPa geopotential height", "unit": "dam", "cmap": "cividis",
-        "vmin": 500.0, "vmax": 600.0, "contours": list(np.arange(480, 621, 6)),
-        "line_color": "#5d3a9b", "decimals": 1,
-    },
+
     "wind": {
         "label": "10 m wind speed", "unit": "m/s", "cmap": "plasma",
         "vmin": 0.0, "vmax": 25.0, "contours": [5, 10, 15, 20, 25, 30],
         "line_color": "#9b4f00", "decimals": 1,
     },
 }
+
+PRESSURE_LEVELS_HPA = (850, 700, 500)
+PRESSURE_DISPLAY_SPECS = {
+    "temp": {
+        "label": "Pressure-level temperature", "unit": "degrees_celsius", "cmap": "coolwarm",
+        "vmin": -45.0, "vmax": 25.0, "contours": list(np.arange(-60, 31, 5)),
+        "line_color": "#6d1f1f", "decimals": 1, "label_every": 10,
+    },
+    "z": {
+        "label": "Geopotential height", "unit": "dam", "cmap": "cividis",
+        "vmin": 100.0, "vmax": 1000.0, "contours": [],
+        "line_color": "#5d3a9b", "decimals": 1, "label_every": 12,
+    },
+}
+
+
+def pressure_spec(kind: str, level: int) -> dict:
+    spec = dict(PRESSURE_DISPLAY_SPECS[kind])
+    spec["label"] = f"{level} hPa {spec['label'].lower()}"
+    if kind == "z":
+        # Standard synoptic contour spacing: 3 dam lower troposphere, 6 dam at 500 hPa.
+        step = 6 if level <= 500 else 3
+        spec["contours"] = list(np.arange(0, 1201, step))
+        # Level-specific display ranges improve colour contrast without affecting queried values.
+        ranges = {850: (100.0, 180.0), 700: (250.0, 340.0), 500: (480.0, 600.0)}
+        spec["vmin"], spec["vmax"] = ranges[level]
+    else:
+        ranges = {850: (-35.0, 30.0), 700: (-45.0, 20.0), 500: (-60.0, 5.0)}
+        spec["vmin"], spec["vmax"] = ranges[level]
+    return spec
 
 
 def list_field(cycle: str, key: str, cache: dict) -> list[dict]:
@@ -198,9 +223,10 @@ def prepared_fields(raw: dict) -> tuple[dict[str, np.ndarray], np.ndarray, np.nd
         "rh2m": np.asarray(grids["relhum_2m"].values, dtype=np.float32),
         "cloud": np.asarray(grids["clct"].values, dtype=np.float32),
         "precip": np.asarray(grids["tot_prec"].values, dtype=np.float32),
-        "t850": np.asarray(grids["t_850"].values, dtype=np.float32) - 273.15,
-        "z500": np.asarray(grids["fi_500"].values, dtype=np.float32) / 9.80665 / 10.0,
     }
+    for level in PRESSURE_LEVELS_HPA:
+        arrays[f"temp_{level}"] = np.asarray(grids[f"t_{level}"].values, dtype=np.float32) - 273.15
+        arrays[f"z_{level}"] = np.asarray(grids[f"fi_{level}"].values, dtype=np.float32) / 9.80665 / 10.0
     u = np.asarray(grids["u_10m"].values, dtype=np.float32)
     v = np.asarray(grids["v_10m"].values, dtype=np.float32)
     arrays["wind"] = np.hypot(u, v).astype(np.float32)
@@ -270,7 +296,10 @@ def contour_geojson(
                     "type": "Feature",
                     "properties": {
                         "level": float(level),
-                        "label": index == 0,
+                        "label": bool(index == 0 and (
+                            not spec.get("label_every")
+                            or abs(level / spec["label_every"] - round(level / spec["label_every"])) < 1e-6
+                        )),
                         "text": f"{level:.{spec['decimals']}f} {spec['unit']}",
                     },
                     "geometry": {"type": "LineString", "coordinates": coords},
@@ -383,6 +412,50 @@ def interactive_metadata(
             },
         ])
 
+    pressure_fields = {}
+    for level in PRESSURE_LEVELS_HPA:
+        pressure_fields[str(level)] = {}
+        for kind in ("temp", "z"):
+            field_id = f"{kind}_{level}"
+            array = arrays[field_id]
+            spec = pressure_spec(kind, level)
+            fill_file = f"{field_id}-fill.webp"
+            contour_file = f"{field_id}-contours.geojson"
+            grid_file = f"{field_id}.f32.gz"
+            render_fill(array, spec, output_dir / fill_file)
+            contour_geojson(lons, lats, array, spec, output_dir / contour_file)
+            write_grid(array, output_dir / grid_file)
+            field_meta = {
+                "label": spec["label"], "unit": spec["unit"], "decimals": spec["decimals"],
+                "pressure_level_hpa": level, "pressure_variable": kind,
+                "grid_file": f"{public_prefix}/{grid_file}",
+                "fill_file": f"{public_prefix}/{fill_file}",
+                "contour_file": f"{public_prefix}/{contour_file}",
+                "range": [spec["vmin"], spec["vmax"]],
+                "color_stops": color_stops(spec),
+                "shape": [int(array.shape[0]), int(array.shape[1])],
+                "lat_start": float(lats[0]), "lat_step": float(np.median(np.diff(lats))),
+                "lon_start": float(lons[0]), "lon_step": float(np.median(np.diff(lons))),
+            }
+            fields[field_id] = field_meta
+            pressure_fields[str(level)][kind] = field_id
+            layers.extend([
+                {
+                    "id": f"pressure_{kind}_fill_{level}", "field": field_id, "kind": "raster",
+                    "label": f"{spec['label']} · colour", "group": "Pressure-level fields",
+                    "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
+                    "pressure_level_hpa": level, "pressure_variable": kind,
+                    "default": False, "opacity": 0.55, "display_resampling": "bilinear_2x",
+                },
+                {
+                    "id": f"pressure_{kind}_contours_{level}", "field": field_id, "kind": "contours",
+                    "label": f"{spec['label']} · isolines", "group": "Pressure-level fields",
+                    "file": f"{public_prefix}/{contour_file}", "line_color": spec["line_color"],
+                    "pressure_level_hpa": level, "pressure_variable": kind,
+                    "default": False, "opacity": 0.9,
+                },
+            ])
+
     vectors_file = "wind-vectors.geojson"
     wind_vectors_geojson(lons, lats, arrays["_u10"], arrays["_v10"], output_dir / vectors_file)
     layers.append({
@@ -418,6 +491,9 @@ def interactive_metadata(
             "spacing_degrees": float(abs(np.median(np.diff(lons)))),
         },
         "sampling_modes": ["bilinear", "nearest"],
+        "pressure_levels_hpa": list(PRESSURE_LEVELS_HPA),
+        "default_pressure_level_hpa": 500,
+        "pressure_fields": pressure_fields,
         "fields": fields,
         "layers": layers,
         "notes": {
@@ -473,7 +549,10 @@ def main() -> int:
             step_meta["dimensions"] = {
                 "time": {"forecast_hour": lead, "valid_at": step_meta["valid_at"]},
                 "horizontal": {"coordinates": ["latitude", "longitude"]},
-                "pressure_level_hpa": {"temperature": [850], "geopotential_height": [500]},
+                "pressure_level_hpa": {
+                    "values": list(PRESSURE_LEVELS_HPA),
+                    "variables": ["temperature", "geopotential_height"],
+                },
             }
             meta_file = step_dir / "meta.json"
             meta_file.write_text(json.dumps(step_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -501,7 +580,9 @@ def main() -> int:
         "steps": time_steps,
         "dimensions": {
             "time": len(time_steps),
-            "field": len(DISPLAY_SPECS),
+            "surface_field": len(DISPLAY_SPECS),
+            "pressure_level": len(PRESSURE_LEVELS_HPA),
+            "pressure_variable": len(PRESSURE_DISPLAY_SPECS),
             "latitude": int(current_meta["native_grid"]["shape"][0]),
             "longitude": int(current_meta["native_grid"]["shape"][1]),
         },

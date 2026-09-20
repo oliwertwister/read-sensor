@@ -1342,7 +1342,7 @@ a { color: #58a6ff; }
 .icon-interactive-heading p { margin:0; }
 .icon-map-meta {
   display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:1.15fr 1.55fr 1.15fr 1.15fr .85fr;
   gap:10px;
   margin-bottom:14px;
 }
@@ -1396,7 +1396,7 @@ a { color: #58a6ff; }
 }
 .icon-layer-tools {
   display:grid;
-  grid-template-columns:1fr auto;
+  grid-template-columns:minmax(0,1fr) minmax(0,.85fr) auto;
   align-items:end;
   gap:8px;
   padding-bottom:12px;
@@ -1554,6 +1554,9 @@ a { color: #58a6ff; }
   font-size:.68rem;
   line-height:1.35;
 }
+@media(max-width:1050px){
+  .icon-map-meta { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
 @media(max-width:900px){
   .icon-map-workspace { grid-template-columns:1fr; }
   .icon-layer-panel { max-height:360px; }
@@ -1562,6 +1565,7 @@ a { color: #58a6ff; }
 @media(max-width:620px){
   .icon-interactive-heading { flex-direction:column; }
   .icon-map-meta { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .icon-layer-tools { grid-template-columns:1fr; }
   .icon-map-stage, #iconInteractiveMap { min-height:500px; height:500px; }
 }
 @media(max-width:420px){
