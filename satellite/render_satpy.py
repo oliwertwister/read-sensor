@@ -190,7 +190,7 @@ def render(input_dir: Path, output: Path) -> dict:
 
     metadata = {
         "generated_at": generated_at,
-        "source": "EUMETSAT Data Store native MTG/FCI Level-1c via EUMDAC + Satpy",
+        "source": "EUMETSAT Data Store native Meteosat FCI Level-1c via EUMDAC + Satpy",
         "backend": "satpy-native-fci-l1c",
         "collection": COLLECTION,
         "reader": READER,
@@ -201,7 +201,7 @@ def render(input_dir: Path, output: Path) -> dict:
             "geocolour": {
                 "file": "geocolour.webp",
                 "raw_file": "geocolour-raw.webp",
-                "title": "MTG/FCI natural colour · native Level-1c",
+                "title": "Meteosat FCI · Natural colour · native Level-1c",
                 "subtitle": "Satpy natural_color composite resampled to the read-sensor Europe grid",
                 "observed_at": observed_at,
                 "stale": False,
@@ -209,7 +209,7 @@ def render(input_dir: Path, output: Path) -> dict:
             "ir105": {
                 "file": "ir105.webp",
                 "raw_file": "ir105-raw.webp",
-                "title": "MTG/FCI IR 10.5 µm · native Level-1c",
+                "title": "Meteosat FCI · Infrared 10.5 µm · native Level-1c",
                 "subtitle": "Satpy IR 10.5 display plus calibrated brightness-temperature grid",
                 "observed_at": observed_at,
                 "stale": False,
@@ -217,7 +217,7 @@ def render(input_dir: Path, output: Path) -> dict:
         },
         "numeric_fields": {
             "sat_ir105_bt": {
-                "label": "MTG/FCI IR 10.5 µm brightness temperature",
+                "label": "FCI 10.5 µm brightness temperature",
                 "unit": "K",
                 "decimals": 1,
                 "grid_file": "satellite/ir105-bt.f32.gz",

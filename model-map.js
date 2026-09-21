@@ -19,6 +19,7 @@
     animationSerial: 0,
     prefetchedSteps: new Set(),
     cubeState: null,
+    assetVersion: null,
     initializing: null,
   };
 
@@ -46,14 +47,13 @@
   function updateModelMetaCards() {
     const meta = iconModelState.meta;
     if (!meta) return;
-    iconEl("iconMapRun").textContent = modelTime(meta.run_at);
-    iconEl("iconMapValid").textContent = modelTime(meta.valid_at);
-    iconEl("iconMapSatellite").textContent = modelTime(meta.satellite_observed_at);
-    iconEl("iconMapGrid").textContent = `${meta.native_grid.spacing_degrees}°`;
+    if (iconEl("iconMapRun")) iconEl("iconMapRun").textContent = modelTime(meta.run_at);
+    if (iconEl("iconMapSatellite")) iconEl("iconMapSatellite").textContent = modelTime(meta.satellite_observed_at);
+    if (iconEl("iconMapGrid")) iconEl("iconMapGrid").textContent = `${meta.native_grid.spacing_degrees}°`;
   }
 
   function versioned(path) {
-    const version = iconModelState.meta?.valid_at || Date.now();
+    const version = iconModelState.assetVersion || iconModelState.meta?.valid_at || Date.now();
     return `${path}?v=${encodeURIComponent(version)}`;
   }
 
@@ -293,7 +293,7 @@
 
   function layerSection(def) {
     if (def.group === "Satellite") {
-      return { key: "satellite", label: "Satellite", order: 0 };
+      return { key: "satellite", label: "Satellite observation", order: 0 };
     }
     if (def.pressure_level_hpa == null) {
       return { key: "surface", label: "Surface fields", order: 1 };
@@ -363,6 +363,23 @@
     });
 
     row.append(top, slider);
+    if (def.kind === "satellite" && def.source_label) {
+      const source = document.createElement("div");
+      source.className = "model-layer-source";
+      const sourceBadge = document.createElement("span");
+      sourceBadge.className = `model-source-badge ${def.source_kind || ""}`.trim();
+      sourceBadge.textContent = def.source_kind === "native-derived" ? "Native Level-1c → Satpy" : "Published image";
+      const sourceText = document.createElement("small");
+      sourceText.textContent = def.source_label;
+      source.append(sourceBadge, sourceText);
+      if (def.query_label) {
+        const queryBadge = document.createElement("span");
+        queryBadge.className = "model-query-badge";
+        queryBadge.textContent = `Query: ${def.query_label}`;
+        source.append(queryBadge);
+      }
+      row.append(source);
+    }
     if (def.kind === "raster" && def.field) {
       const field = iconModelState.meta.fields[def.field];
       if (field) row.append(colorLegend(field));
@@ -403,7 +420,7 @@
       details.className = "model-layer-group";
       details.dataset.layerGroup = section.key;
       const storedOpen = iconModelState.layerGroupOpen.get(section.key);
-      details.open = storedOpen ?? (section.key === "satellite" || section.key === "surface");
+      details.open = storedOpen ?? (section.key === "satellite");
       details.addEventListener("toggle", () => {
         iconModelState.layerGroupOpen.set(section.key, details.open);
       });
@@ -432,7 +449,7 @@
           fieldDetails.className = "model-field-group";
           fieldDetails.dataset.fieldGroup = `${section.key}:${fieldKey}`;
           const storedFieldOpen = iconModelState.layerFieldOpen.get(fieldDetails.dataset.fieldGroup);
-          fieldDetails.open = storedFieldOpen ?? defs.some((def) => layerEnabled(def));
+          fieldDetails.open = storedFieldOpen ?? false;
           fieldDetails.addEventListener("toggle", () => {
             iconModelState.layerFieldOpen.set(fieldDetails.dataset.fieldGroup, fieldDetails.open);
           });
@@ -871,6 +888,7 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const rootMeta = await response.json();
         if (!rootMeta.interactive) throw new Error("Interactive metadata missing");
+        iconModelState.assetVersion = rootMeta.generated_at || rootMeta.interactive.valid_at || String(Date.now());
         iconModelState.meta = rootMeta.interactive;
         iconModelState.timeline = rootMeta.interactive.timeline || null;
         iconModelState.currentStepIndex = Number(iconModelState.timeline?.current_index ?? 0);

@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=layer-panel-1">
+    <link rel="stylesheet" href="style.css?v=icon-rethink-1">
   </head>
   <body>
     <header>
@@ -86,57 +86,49 @@
         <div class="model-heading">
           <div>
             <h2 id="iconTitle">DWD ICON-EU</h2>
-            <p class="muted">Native GRIB2 analysis + official DWD reference charts</p>
+            <p class="muted">Interactive DWD forecast fields with independent Meteosat FCI observations</p>
           </div>
         </div>
 
         <section class="icon-interactive" aria-labelledby="iconInteractiveTitle">
           <div class="icon-interactive-heading">
             <div>
-              <h3 id="iconInteractiveTitle">Interactive weather fields</h3>
-              <p class="muted">Leaflet · independent raster, isoline, wind and satellite layers · click the map to query model values</p>
+              <h3 id="iconInteractiveTitle">Forecast map</h3>
+              <p class="muted">Choose a forecast time, then turn fields on from the layer panel.</p>
             </div>
             <span id="iconMapStatus" class="status">Open this tab to load map</span>
           </div>
 
-          <div class="icon-map-meta">
-            <span><small>Model run</small><strong id="iconMapRun">—</strong></span>
-            <span class="icon-time-card"><small>Forecast / valid time</small><select id="iconForecastTime" aria-label="ICON-EU forecast valid time"><option>Loading…</option></select></span>
-            <span><small>Valid</small><strong id="iconMapValid">—</strong></span>
-            <span><small>Satellite</small><strong id="iconMapSatellite">—</strong></span>
-            <span><small>Native grid</small><strong id="iconMapGrid">—</strong></span>
-          </div>
-
-          <div class="icon-map-toolbar" aria-label="ICON-EU map controls">
-            <label for="iconSampling">
-              <span>Point sampling</span>
-              <select id="iconSampling">
-                <option value="bilinear" selected>Bilinear</option>
-                <option value="nearest">Nearest grid point</option>
-              </select>
+          <div class="icon-primary-controls">
+            <label class="icon-forecast-control" for="iconForecastTime">
+              <span>Forecast time</span>
+              <select id="iconForecastTime" aria-label="ICON-EU forecast valid time"><option>Loading…</option></select>
             </label>
-            <label for="iconPressureLevel">
-              <span>Pressure level</span>
-              <select id="iconPressureLevel" aria-label="Pressure level">
-                <option>Loading…</option>
-              </select>
-            </label>
-            <button id="iconMapReset" type="button">Fit Europe</button>
             <div class="icon-animation-controls" aria-label="Forecast animation">
               <button id="iconAnimPlay" type="button" aria-label="Play forecast animation">▶ Play</button>
               <input id="iconAnimRange" type="range" min="0" max="0" step="1" value="0" aria-label="Forecast animation time">
               <strong id="iconAnimTime">—</strong>
-              <select id="iconAnimSpeed" aria-label="Animation speed">
-                <option value="1800">0.5×</option>
-                <option value="1000" selected>1×</option>
-                <option value="550">2×</option>
-              </select>
-              <label class="icon-anim-loop"><input id="iconAnimLoop" type="checkbox" checked> Loop</label>
             </div>
+            <button id="iconMapReset" type="button" class="icon-fit-button">Fit Europe</button>
+            <details class="icon-map-settings">
+              <summary>Map options</summary>
+              <div class="icon-map-settings-grid">
+                <label for="iconSampling"><span>Point sampling</span><select id="iconSampling"><option value="bilinear" selected>Bilinear</option><option value="nearest">Nearest grid point</option></select></label>
+                <label for="iconPressureLevel"><span>Pressure level</span><select id="iconPressureLevel" aria-label="Pressure level"><option>Loading…</option></select></label>
+                <label for="iconAnimSpeed"><span>Animation speed</span><select id="iconAnimSpeed" aria-label="Animation speed"><option value="1800">0.5×</option><option value="1000" selected>1×</option><option value="550">2×</option></select></label>
+                <label class="icon-anim-loop"><input id="iconAnimLoop" type="checkbox" checked> Loop animation</label>
+              </div>
+            </details>
+          </div>
+
+          <div class="icon-context-line" aria-label="Forecast metadata">
+            <span><b>ICON-EU</b> run <strong id="iconMapRun">—</strong></span>
+            <span><b>Meteosat FCI</b> observed <strong id="iconMapSatellite">—</strong></span>
+            <span>grid <strong id="iconMapGrid">—</strong></span>
           </div>
 
           <div class="icon-map-workspace">
-            <aside class="icon-layer-panel" aria-label="ICON-EU map layers">
+            <aside class="icon-layer-panel" aria-label="Weather map layers">
               <div id="iconLayerList" class="icon-layer-list">
                 <p class="muted">Layer catalogue loads with the map.</p>
               </div>
@@ -148,41 +140,57 @@
             </div>
           </div>
 
-          <p class="muted icon-map-note">Colour layers are display rasters; click queries read the underlying ICON-EU Float32 grids. Bilinear sampling interpolates between native grid points and does not create additional model resolution.</p>
+          <div class="icon-source-key" aria-label="Data source key">
+            <span><b>Numerical forecast</b><small>DWD ICON-EU GRIB2 · queryable</small></span>
+            <span><b>Native satellite</b><small>EUMETSAT FCI Level-1c → Satpy · derived + IR queryable</small></span>
+            <span><b>Satellite fallback</b><small>EUMETView WMS image · display only</small></span>
+            <span><b>Published chart</b><small>Official DWD PNG · visual reference only</small></span>
+          </div>
         </section>
 
-        <section class="icon-derived" aria-labelledby="iconDerivedTitle">
-          <div class="icon-derived-heading">
-            <div>
-              <h3 id="iconDerivedTitle">Current synoptic overlay</h3>
-              <p class="muted">MTG/FCI satellite background + ICON-EU PMSL, 2 m temperature and 10 m wind</p>
-            </div>
-            <span id="iconDerivedFreshness" class="status">Loading…</span>
-          </div>
-          <figure class="model-figure icon-derived-figure">
-            <img id="iconDerivedChart" src="model/synoptic.webp" alt="ICON-EU isobars, isotherms and wind over MTG FCI satellite imagery">
-            <figcaption id="iconDerivedCaption" class="muted">Loading model metadata…</figcaption>
-          </figure>
-          <div class="icon-derived-meta">
-            <span><small>Model run</small><strong id="iconRunTime">—</strong></span>
-            <span><small>Forecast</small><strong id="iconLeadTime">—</strong></span>
-            <span><small>Valid</small><strong id="iconValidTime">—</strong></span>
-            <span><small>Satellite</small><strong id="iconSatelliteTime">—</strong></span>
-            <span><small>Grid</small><strong id="iconGridSpacing">—</strong></span>
-          </div>
-          <p class="muted wx-source">Numerical fields: <a href="https://opendata.dwd.de/weather/nwp/icon-eu/grib/" target="_blank" rel="noreferrer">DWD ICON-EU Open Data</a> · satellite background: <a href="https://view.eumetsat.int/" target="_blank" rel="noreferrer">EUMETSAT EUMETView</a>.</p>
-        </section>
+        <details class="icon-secondary-products">
+          <summary>
+            <span>Reference &amp; static products</span>
+            <small>Official DWD charts and the generated synoptic composite</small>
+          </summary>
+          <div class="icon-secondary-products-body">
+            <section class="system-section icon-reference" aria-labelledby="iconReferenceTitle">
+              <div class="model-heading">
+                <div>
+                  <h3 id="iconReferenceTitle">Official DWD reference chart</h3>
+                  <p class="muted">Published PNG from DWD. It is not a numerical grid; the interactive map above reads the corresponding ICON-EU GRIB2 data directly.</p>
+                </div>
+                <div class="model-controls">
+                  <label>Field <select id="iconProduct"><option value="win">10 m wind</option><option value="ttc">2 m temperature</option><option value="rsa">6 h precipitation</option></select></label>
+                  <label>Forecast <select id="iconPeriod"><option value="006012">+6 / +12 h</option><option value="018024">+18 / +24 h</option><option value="030036">+30 / +36 h</option><option value="042048">+42 / +48 h</option></select></label>
+                </div>
+              </div>
+              <figure class="model-figure"><img id="iconChart" alt="Official DWD ICON-EU forecast chart"><figcaption id="iconCaption" class="muted"></figcaption></figure>
+            </section>
 
-        <section class="system-section icon-reference" aria-labelledby="iconReferenceTitle">
-          <div class="model-heading">
-            <div><h3 id="iconReferenceTitle">Official DWD reference charts</h3><p class="muted">Static Central Europe forecast products published directly by DWD</p></div>
-            <div class="model-controls">
-              <label>Field <select id="iconProduct"><option value="win">10 m wind</option><option value="ttc">2 m temperature</option><option value="rsa">6 h precipitation</option></select></label>
-              <label>Forecast <select id="iconPeriod"><option value="006012">+6 / +12 h</option><option value="018024">+18 / +24 h</option><option value="030036">+30 / +36 h</option><option value="042048">+42 / +48 h</option></select></label>
-            </div>
+            <section class="icon-derived" aria-labelledby="iconDerivedTitle">
+              <div class="icon-derived-heading">
+                <div>
+                  <h3 id="iconDerivedTitle">Generated synoptic composite</h3>
+                  <p class="muted">Our rendered product: Meteosat background with ICON-EU pressure, temperature and wind.</p>
+                </div>
+                <span id="iconDerivedFreshness" class="status">Loading…</span>
+              </div>
+              <figure class="model-figure icon-derived-figure">
+                <img id="iconDerivedChart" src="model/synoptic.webp" alt="ICON-EU isobars, isotherms and wind over Meteosat FCI imagery">
+                <figcaption id="iconDerivedCaption" class="muted">Loading model metadata…</figcaption>
+              </figure>
+              <div class="icon-derived-meta">
+                <span><small>Model run</small><strong id="iconRunTime">—</strong></span>
+                <span><small>Forecast</small><strong id="iconLeadTime">—</strong></span>
+                <span><small>Valid</small><strong id="iconValidTime">—</strong></span>
+                <span><small>Satellite</small><strong id="iconSatelliteTime">—</strong></span>
+                <span><small>Grid</small><strong id="iconGridSpacing">—</strong></span>
+              </div>
+              <p class="muted wx-source">Numerical fields: <a href="https://opendata.dwd.de/weather/nwp/icon-eu/grib/" target="_blank" rel="noreferrer">DWD ICON-EU Open Data</a> · satellite observation: <a href="https://user.eumetsat.int/" target="_blank" rel="noreferrer">EUMETSAT Data Store</a>.</p>
+            </section>
           </div>
-          <figure class="model-figure"><img id="iconChart" alt="DWD ICON-EU numerical weather forecast chart"><figcaption id="iconCaption" class="muted"></figcaption></figure>
-        </section>
+        </details>
       </section>
 
       <section id="synop" class="tab">
@@ -398,9 +406,9 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=synoptic-resilience-1"></script>
+    <script src="app.js?v=icon-rethink-1"></script>
     <script src="cube-storage.js?v=zarr-r2-prototype-1"></script>
-    <script src="model-map.js?v=layer-panel-1"></script>
+    <script src="model-map.js?v=icon-rethink-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

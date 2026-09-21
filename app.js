@@ -1111,7 +1111,7 @@ function updateIconChart() {
   const name = `Z__C_EDZW_LATEST_nwv01%2Cicoeu_${product}_ce_N_${period}_${meta.suffix}_LATEST_WV11.png`;
   $("iconChart").src = base + name;
   $("iconChart").alt = `DWD ICON-EU ${meta.label} forecast for Central Europe`;
-  $("iconCaption").textContent = `${meta.label} · ${$("iconPeriod").selectedOptions[0].textContent} · DWD ICON-EU. The PNG itself contains model initialization and valid times.`;
+  $("iconCaption").textContent = `${meta.label} · ${$("iconPeriod").selectedOptions[0].textContent} · official DWD published PNG. Visual reference only; the interactive map uses DWD ICON-EU GRIB2 directly.`;
 }
 
 function iconTime(value) {

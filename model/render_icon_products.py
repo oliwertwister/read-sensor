@@ -569,13 +569,13 @@ def interactive_metadata(
     layers[0:0] = [
         {
             "id": "satellite_geocolour", "kind": "satellite",
-            "label": "MTG/FCI Geo Colour", "group": "Satellite",
+            "label": "Meteosat FCI · Natural colour", "group": "Satellite",
             "file": "satellite/geocolour-raw.webp", "bounds": satellite_bounds,
             "default": True, "opacity": 0.65,
         },
         {
             "id": "satellite_ir105", "kind": "satellite",
-            "label": "MTG/FCI IR 10.5 µm", "group": "Satellite",
+            "label": "Meteosat FCI · Infrared 10.5 µm", "group": "Satellite",
             "file": "satellite/ir105-raw.webp", "bounds": satellite_bounds,
             "default": False, "opacity": 0.65,
         },
@@ -632,6 +632,15 @@ def main() -> int:
         ).get("observed_at")
         satellite_generated_at = satellite_meta.get("generated_at")
 
+    satellite_backend = satellite_meta.get("backend") or "eumetview-wms"
+    satellite_native = satellite_backend == "satpy-native-fci-l1c"
+    satellite_source = {
+        "backend": satellite_backend,
+        "kind": "native-derived" if satellite_native else "rendered-image",
+        "label": "EUMETSAT FCI Level-1c → Satpy" if satellite_native else "EUMETView WMS image",
+        "queryable_ir": "sat_ir105_bt" in (satellite_meta.get("numeric_fields") or {}),
+    }
+
     time_steps = []
     current_raw = None
     current_urls = None
@@ -663,13 +672,24 @@ def main() -> int:
                 public_prefix=f"model/times/{step_key}",
             )
             step_meta["satellite_observed_at"] = satellite_observed_at
+            step_meta["satellite_source"] = dict(satellite_source)
+            for layer in step_meta["layers"]:
+                if layer.get("id") == "satellite_geocolour":
+                    layer["label"] = "Meteosat FCI · Natural colour"
+                    layer["source_kind"] = satellite_source["kind"]
+                    layer["source_label"] = satellite_source["label"]
+                elif layer.get("id") == "satellite_ir105":
+                    layer["label"] = "Meteosat FCI · Infrared 10.5 µm"
+                    layer["source_kind"] = satellite_source["kind"]
+                    layer["source_label"] = satellite_source["label"]
             for field_id, field_meta in (satellite_meta.get("numeric_fields") or {}).items():
                 step_meta["fields"][field_id] = dict(field_meta)
                 if field_id == "sat_ir105_bt":
+                    step_meta["fields"][field_id]["label"] = "FCI 10.5 µm brightness temperature"
                     for layer in step_meta["layers"]:
                         if layer.get("id") == "satellite_ir105":
                             layer["field"] = field_id
-                            layer["label"] = "MTG/FCI IR 10.5 µm · brightness temperature"
+                            layer["query_label"] = "Brightness temperature"
                             break
             step_meta["dimensions"] = {
                 "time": {"forecast_hour": lead, "valid_at": step_meta["valid_at"]},
