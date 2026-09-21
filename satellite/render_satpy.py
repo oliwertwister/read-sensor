@@ -336,6 +336,9 @@ def render(input_dir: Path, output: Path) -> dict:
         natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
         ir_display = save_enhanced(scene, "ir_105", output / "_satpy-ir105")
         daylight_mask = daylight_alpha_mask(natural.size, observed_at) if observed_at else None
+        daylight_coverage_fraction = (
+            float(np.mean(daylight_mask > 0)) if daylight_mask is not None else None
+        )
 
         composite_images = {}
         for key in loaded_composites:
@@ -449,6 +452,10 @@ def render(input_dir: Path, output: Path) -> dict:
                 else cfg["method"]
             ),
             "source_kind": "native-derived",
+            "daylight_only": key in DAYLIGHT_ONLY_COMPOSITES,
+            "daylight_coverage_fraction": (
+                daylight_coverage_fraction if key in DAYLIGHT_ONLY_COMPOSITES else None
+            ),
             "storage": webp_storage(output, stem),
         }
 

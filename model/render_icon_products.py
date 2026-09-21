@@ -867,6 +867,8 @@ def main() -> int:
                     "opacity": 0.68,
                     "source_kind": product.get("source_kind") or satellite_source["kind"],
                     "source_label": satellite_source["label"],
+                    "daylight_only": bool(product.get("daylight_only")),
+                    "daylight_coverage_fraction": product.get("daylight_coverage_fraction"),
                     "definition": product.get("definition") or product.get("subtitle") or "Derived satellite composite.",
                     "method": product.get("method") or "Native EUMETSAT FCI Level-1c processed with Satpy.",
                 })

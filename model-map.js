@@ -209,6 +209,12 @@
   async function setLayerEnabled(def, enabled) {
     const row = iconModelState.rows.get(def.id);
     const checkbox = row?.querySelector('input[type="checkbox"]');
+    if (enabled && !layerAvailable(def)) {
+      if (checkbox) checkbox.checked = false;
+      setMapStatus("Night · no daylight coverage", "warning");
+      updateLayerPanelSummary();
+      return;
+    }
     if (checkbox) checkbox.disabled = true;
     try {
       let instance = iconModelState.instances.get(def.id);
@@ -230,7 +236,7 @@
       if (checkbox) checkbox.checked = false;
       setMapStatus(`Could not load ${def.label}`, "warning");
     } finally {
-      if (checkbox) checkbox.disabled = false;
+      if (checkbox) checkbox.disabled = !layerAvailable(def);
       updateActiveLayersSummary();
     }
   }
@@ -249,7 +255,14 @@
     return legend;
   }
 
+  function layerAvailable(def) {
+    if (!def.daylight_only || def.daylight_coverage_fraction == null) return true;
+    const coverage = Number(def.daylight_coverage_fraction);
+    return !Number.isFinite(coverage) || coverage > 0.001;
+  }
+
   function layerEnabled(def) {
+    if (!layerAvailable(def)) return false;
     const preference = iconModelState.layerPreferences.get(def.id);
     return preference?.enabled ?? Boolean(def.default);
   }
@@ -501,7 +514,10 @@
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     const preference = iconModelState.layerPreferences.get(def.id);
-    checkbox.checked = preference?.enabled ?? Boolean(def.default);
+    const available = layerAvailable(def);
+    checkbox.checked = available && (preference?.enabled ?? Boolean(def.default));
+    checkbox.disabled = !available;
+    row.classList.toggle("is-unavailable", !available);
     const name = document.createElement("span");
     name.textContent = def.kind === "satellite" ? def.label : layerKindLabel(def);
     label.append(checkbox, name);
@@ -529,6 +545,7 @@
     slider.step = "5";
     slider.value = String(Math.round((preference?.opacity ?? def.opacity ?? 1) * 100));
     slider.className = "model-layer-opacity";
+    slider.disabled = !available;
     slider.setAttribute("aria-label", `${def.label} opacity`);
 
     checkbox.addEventListener("change", () => {
@@ -555,6 +572,12 @@
       const sourceText = document.createElement("small");
       sourceText.textContent = def.source_label;
       source.append(sourceBadge, sourceText);
+      if (!available && def.daylight_only) {
+        const availabilityBadge = document.createElement("span");
+        availabilityBadge.className = "model-availability-badge";
+        availabilityBadge.textContent = "Night · no daylight coverage";
+        source.append(availabilityBadge);
+      }
       if (def.query_label) {
         const queryBadge = document.createElement("span");
         queryBadge.className = "model-query-badge";
@@ -751,8 +774,9 @@
       if (!row) continue;
       const checkbox = row.querySelector('input[type="checkbox"]');
       const slider = row.querySelector('input[type="range"]');
+      const previous = iconModelState.layerPreferences.get(def.id) || {};
       iconModelState.layerPreferences.set(def.id, {
-        enabled: Boolean(checkbox?.checked),
+        enabled: layerAvailable(def) ? Boolean(checkbox?.checked) : (previous.enabled ?? Boolean(def.default)),
         opacity: slider ? Number(slider.value) / 100 : Number(def.opacity ?? 1),
       });
     }
