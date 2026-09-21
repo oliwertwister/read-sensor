@@ -192,7 +192,10 @@ def decorate(image: Image.Image, countries: dict) -> Image.Image:
     draw.ellipse((bx + 4, by - 8, bx + 8, by - 4), fill="white")
     draw.ellipse((bx - 3, by, bx + 3, by + 5), fill=(20, 24, 29, 255))
     label(draw, (bx, by + 27), "Berlin", anchor="ma")
-    return Image.alpha_composite(canvas, overlay).convert("RGB")
+    # Keep the source alpha mask. Native Satpy daytime/no-data areas are
+    # transparent and must remain transparent in WebP/Leaflet rather than
+    # being flattened to black.
+    return Image.alpha_composite(canvas, overlay)
 
 
 def load_previous_metadata(output: Path) -> dict:

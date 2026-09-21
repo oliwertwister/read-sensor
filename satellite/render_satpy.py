@@ -221,7 +221,11 @@ def save_enhanced(scene: Scene, dataset: str, destination: Path) -> Image.Image:
     scene.save_dataset(dataset, filename=str(png_path), writer="simple_image")
     try:
         with Image.open(png_path) as source:
-            image = source.convert("RGB")
+            # Trollimage writes invalid/masked Satpy pixels as an alpha band
+            # when fill_value is left unset. Preserve it: converting to RGB
+            # turns daylight/no-data masks into the black rectangles that were
+            # previously visible in Leaflet.
+            image = source.convert("RGBA")
     finally:
         png_path.unlink(missing_ok=True)
     return image
