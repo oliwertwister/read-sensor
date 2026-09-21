@@ -1123,19 +1123,46 @@ function iconTime(value) {
   }).format(date) + " UTC";
 }
 
+async function fetchJsonRetry(url, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+    }
+  }
+  throw lastError;
+}
+
+function preloadImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(url);
+    image.onerror = () => reject(new Error(`Image load failed: ${url}`));
+    image.src = url;
+  });
+}
+
+let iconSynopticRetryTimer = null;
 async function loadIconSynoptic() {
   const freshness = $("iconDerivedFreshness");
+  const chart = $("iconDerivedChart");
   try {
-    const response = await fetch(`model/latest.json?t=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const meta = await response.json();
-    $("iconDerivedChart").src = `model/synoptic.webp?t=${Date.now()}`;
+    const meta = await fetchJsonRetry(`model/latest.json?t=${Date.now()}`);
+    const imageVersion = encodeURIComponent(meta.generated_at || meta.valid_at || Date.now());
+    const candidate = `model/synoptic.webp?v=${imageVersion}`;
+    await preloadImage(candidate);
+    chart.src = candidate;
     $("iconRunTime").textContent = iconTime(meta.run_at);
     $("iconLeadTime").textContent = `+${meta.forecast_hour ?? "—"} h`;
     $("iconValidTime").textContent = iconTime(meta.valid_at);
     $("iconSatelliteTime").textContent = iconTime(meta.satellite_observed_at);
     $("iconGridSpacing").textContent = meta.grid_spacing_degrees == null ? "—" : `${meta.grid_spacing_degrees}°`;
-    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 2} degrees_celsius · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
+    $("iconDerivedCaption").textContent = `White contours: PMSL every ${meta.pressure_contour_interval_hpa ?? 4} hPa · black contours: 2 m temperature every ${meta.temperature_contour_interval_degrees_celsius ?? 4} degrees_celsius · arrows: 10 m wind · ICON valid ${iconTime(meta.valid_at)} · satellite observed ${iconTime(meta.satellite_observed_at)}.`;
     const valid = new Date(meta.valid_at || "");
     const deltaMinutes = Number.isNaN(valid.getTime()) ? NaN : Math.round((valid.getTime() - Date.now()) / 60000);
     const absMinutes = Math.abs(deltaMinutes);
@@ -1150,13 +1177,27 @@ async function loadIconSynoptic() {
       freshness.textContent = deltaMinutes > 0 ? `Valid in ${hours} h` : `Valid ${hours} h ago`;
     }
     freshness.className = `status ${Number.isFinite(deltaMinutes) && absMinutes <= 240 ? "ok" : "warning"}`;
+    if (iconSynopticRetryTimer !== null) {
+      clearTimeout(iconSynopticRetryTimer);
+      iconSynopticRetryTimer = null;
+    }
   } catch (error) {
     console.error("icon_synoptic_failed", error);
-    freshness.textContent = "Unavailable";
-    freshness.className = "status error";
-    $("iconDerivedCaption").textContent = "Quantitative ICON-EU overlay unavailable.";
+    const hasLastImage = chart.complete && chart.naturalWidth > 0;
+    freshness.textContent = hasLastImage ? "Refresh delayed" : "Temporarily unavailable";
+    freshness.className = "status warning";
+    $("iconDerivedCaption").textContent = hasLastImage
+      ? "Keeping the last successfully loaded quantitative ICON-EU overlay while the refresh is retried."
+      : "The quantitative ICON-EU overlay could not be refreshed yet; retrying automatically.";
+    if (iconSynopticRetryTimer === null) {
+      iconSynopticRetryTimer = setTimeout(() => {
+        iconSynopticRetryTimer = null;
+        loadIconSynoptic();
+      }, 60_000);
+    }
   }
 }
+
 function initIconCharts() {
   $("iconProduct").addEventListener("change", updateIconChart);
   $("iconPeriod").addEventListener("change", updateIconChart);

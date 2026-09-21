@@ -84,6 +84,23 @@ jobs:
       - name: Install geospatial render dependencies
         run: python -m pip install --disable-pip-version-check --quiet -r model/requirements.txt
 
+      - name: Hydrate last known-good Meteosat products
+        run: |
+          mkdir -p satellite/output
+          BASE="https://oliwertwister.github.io/read-sensor/satellite"
+          for file in latest.json geocolour.webp geocolour-raw.webp ir105.webp ir105-raw.webp; do
+            tmp="satellite/output/${file}.download"
+            if curl --fail --silent --show-error --location --retry 2 --retry-delay 1 --max-time 30               "$BASE/$file" -o "$tmp"; then
+              mv "$tmp" "satellite/output/$file"
+            else
+              rm -f "$tmp"
+              echo "No deployed fallback available for $file; continuing with live source"
+            fi
+          done
+
+      - name: Test Meteosat fallback handling
+        run: PYTHONPATH=satellite python satellite/test_render_satellite.py
+
       - name: Render latest Meteosat products
         run: python satellite/render_satellite.py --output satellite/output
 

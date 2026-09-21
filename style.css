@@ -1325,6 +1325,7 @@ a { color: #58a6ff; }
 
 /* Interactive ICON-EU Leaflet field explorer */
 .icon-interactive {
+  overflow-anchor:none;
   margin-top:18px;
   padding:18px;
   border:1px solid #30363d;
@@ -1381,12 +1382,14 @@ a { color: #58a6ff; }
   font-variant-numeric:tabular-nums;
 }
 .icon-map-workspace {
+  overflow-anchor:none;
   display:grid;
   grid-template-columns:minmax(250px,320px) minmax(0,1fr);
   gap:12px;
   min-height:680px;
 }
 .icon-layer-panel {
+  overflow-anchor:none;
   overflow:auto;
   max-height:680px;
   padding:12px;
@@ -1522,6 +1525,7 @@ a { color: #58a6ff; }
   border:1px solid rgba(255,255,255,.18);
 }
 .icon-map-stage {
+  overflow-anchor:none;
   position:relative;
   min-width:0;
   min-height:680px;

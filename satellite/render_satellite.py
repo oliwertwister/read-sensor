@@ -5,14 +5,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
 # Natural Earth 1:50m Admin-0 country polygons (public-domain map geometry).
 COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson"
@@ -35,10 +38,28 @@ PRODUCTS = {
 }
 
 
-def fetch_bytes(url: str) -> bytes:
-    req = Request(url, headers={"User-Agent": "read-sensor-satellite/1.0"})
-    with urlopen(req, timeout=90) as response:
-        return response.read()
+def fetch_bytes(url: str, *, attempts: int = 4, expected_prefix: str | None = None) -> bytes:
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            req = Request(url, headers={
+                "User-Agent": "read-sensor-satellite/1.0",
+                "Accept": "image/png,image/*;q=0.9,application/xml;q=0.5,*/*;q=0.1",
+            })
+            with urlopen(req, timeout=90) as response:
+                payload = response.read()
+                content_type = (response.headers.get("Content-Type") or "").lower()
+                if expected_prefix and not content_type.startswith(expected_prefix):
+                    preview = payload[:160].decode("utf-8", errors="replace").replace("\n", " ")
+                    raise RuntimeError(f"Unexpected Content-Type {content_type!r}: {preview}")
+                if not payload:
+                    raise RuntimeError("Empty upstream response")
+                return payload
+        except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+            last_error = error
+            if attempt < attempts:
+                time.sleep(min(2 ** (attempt - 1), 8))
+    raise RuntimeError(f"Upstream fetch failed after {attempts} attempts: {last_error}") from last_error
 
 
 def latest_times() -> dict[str, str]:
@@ -70,7 +91,19 @@ def wms_image(layer: str, observed_at: str) -> Image.Image:
         "width": str(SIZE[0]), "height": str(SIZE[1]),
         "format": "image/png", "transparent": "false", "time": observed_at,
     }
-    return Image.open(BytesIO(fetch_bytes(f"{WMS}?{urlencode(params)}"))).convert("RGB")
+    url = f"{WMS}?{urlencode(params)}"
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            payload = fetch_bytes(url, attempts=1, expected_prefix="image/")
+            image = Image.open(BytesIO(payload))
+            image.load()
+            return image.convert("RGB")
+        except (UnidentifiedImageError, OSError, RuntimeError) as error:
+            last_error = error
+            if attempt < 3:
+                time.sleep(min(2 ** (attempt - 1), 4))
+    raise RuntimeError(f"Invalid WMS image after 3 attempts for {layer} at {observed_at}: {last_error}") from last_error
 
 
 def font(size: int, bold: bool = False):
@@ -158,6 +191,38 @@ def decorate(image: Image.Image, countries: dict) -> Image.Image:
     return Image.alpha_composite(canvas, overlay).convert("RGB")
 
 
+def load_previous_metadata(output: Path) -> dict:
+    path = output / "latest.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def fallback_available(output: Path, previous: dict, key: str) -> bool:
+    product = (previous.get("products") or {}).get(key) or {}
+    return bool(
+        product.get("file") and product.get("raw_file")
+        and (output / product["file"]).is_file()
+        and (output / product["raw_file"]).is_file()
+    )
+
+
+def atomic_save_webp(image: Image.Image, path: Path) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    image.save(tmp, "WEBP", quality=88, method=6)
+    os.replace(tmp, path)
+
+
+def product_from_previous(previous: dict, key: str, reason: str) -> dict:
+    product = dict((previous.get("products") or {}).get(key) or {})
+    product["stale"] = True
+    product["fallback_reason"] = reason
+    return product
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="satellite/output")
@@ -165,10 +230,22 @@ def main() -> None:
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
 
-    times = latest_times()
-    countries = json.loads(fetch_bytes(COUNTRIES_URL).decode("utf-8"))
-    if not countries.get("features"):
-        raise RuntimeError("Natural Earth Admin-0 geometry is empty")
+    previous = load_previous_metadata(output)
+    warnings: list[str] = []
+    try:
+        times = latest_times()
+    except Exception as error:
+        times = {}
+        warnings.append(f"GetCapabilities failed: {error}")
+
+    try:
+        countries = json.loads(fetch_bytes(COUNTRIES_URL, attempts=3).decode("utf-8"))
+        if not countries.get("features"):
+            raise RuntimeError("Natural Earth Admin-0 geometry is empty")
+    except Exception as error:
+        countries = {}
+        warnings.append(f"Boundary geometry refresh failed: {error}")
+
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     metadata = {
         "generated_at": generated_at,
@@ -179,26 +256,40 @@ def main() -> None:
         "nominal_cadence_minutes": 10,
         "boundary_overlay": "Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent",
         "products": {},
+        "degraded": False,
+        "warnings": warnings,
     }
     for key, cfg in PRODUCTS.items():
         observed_at = times.get(key)
-        if not observed_at:
-            raise RuntimeError(f"No current time advertised for {cfg['layer']}")
-        raw_image = wms_image(cfg["layer"], observed_at)
-        raw_filename = f"{key}-raw.webp"
-        raw_image.save(output / raw_filename, "WEBP", quality=88, method=6)
+        try:
+            if not observed_at:
+                raise RuntimeError(f"No current time advertised for {cfg['layer']}")
+            if not countries:
+                raise RuntimeError("Boundary geometry unavailable")
+            raw_image = wms_image(cfg["layer"], observed_at)
+            raw_filename = f"{key}-raw.webp"
+            atomic_save_webp(raw_image, output / raw_filename)
 
-        image = decorate(raw_image, countries)
-        filename = f"{key}.webp"
-        image.save(output / filename, "WEBP", quality=88, method=6)
-        metadata["products"][key] = {
-            "file": filename,
-            "raw_file": raw_filename,
-            "layer": cfg["layer"],
-            "title": cfg["title"],
-            "subtitle": cfg["subtitle"],
-            "observed_at": observed_at,
-        }
+            image = decorate(raw_image, countries)
+            filename = f"{key}.webp"
+            atomic_save_webp(image, output / filename)
+            metadata["products"][key] = {
+                "file": filename,
+                "raw_file": raw_filename,
+                "layer": cfg["layer"],
+                "title": cfg["title"],
+                "subtitle": cfg["subtitle"],
+                "observed_at": observed_at,
+                "stale": False,
+            }
+        except Exception as error:
+            reason = str(error)
+            if not fallback_available(output, previous, key):
+                raise RuntimeError(f"{key} refresh failed and no previous product is available: {reason}") from error
+            metadata["degraded"] = True
+            metadata["warnings"].append(f"{key}: {reason}")
+            metadata["products"][key] = product_from_previous(previous, key, reason)
+            print(f"WARNING: keeping last known-good {key} product: {reason}")
 
     (output / "latest.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",

@@ -350,7 +350,10 @@
     }
     iconModelState.selectedPressureLevel = next;
     iconModelState.rows.clear();
+    const layerPanel = document.querySelector(".icon-layer-panel");
+    const layerScrollTop = layerPanel?.scrollTop ?? 0;
     buildLayerPanel();
+    if (layerPanel) layerPanel.scrollTop = layerScrollTop;
     for (const def of iconModelState.meta.layers) {
       if (Number(def.pressure_level_hpa) !== next) continue;
       const row = iconModelState.rows.get(def.id);
@@ -527,7 +530,15 @@
       updateModelMetaCards();
       updateAnimationControls();
       populatePressureControl();
+      const layerPanel = document.querySelector(".icon-layer-panel");
+      const layerScrollTop = layerPanel?.scrollTop ?? 0;
+      const pageScrollX = window.scrollX;
+      const pageScrollY = window.scrollY;
       buildLayerPanel();
+      if (layerPanel) layerPanel.scrollTop = layerScrollTop;
+      if (window.scrollX !== pageScrollX || window.scrollY !== pageScrollY) {
+        window.scrollTo({ left: pageScrollX, top: pageScrollY, behavior: "instant" });
+      }
       const enabledLayers = nextMeta.layers.filter((def) => {
         const row = iconModelState.rows.get(def.id);
         return Boolean(row?.querySelector('input[type="checkbox"]')?.checked);
