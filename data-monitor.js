@@ -85,12 +85,11 @@
       "monitorProducts",
       `${s.interactive_fields ?? 0} fields · ${s.interactive_layers ?? 0} layers · ${s.satellite_products ?? 0} satellite`,
     );
-    setText(
-      "monitorWarnings",
-      s.satellite_composite_warnings
-        ? `${s.satellite_composite_warnings} optional composite warning(s)`
-        : "all advertised products rendered",
-    );
+    const issueParts = [];
+    if (s.failed_processing_steps) issueParts.push(`${s.failed_processing_steps} failed step(s)`);
+    if (s.satellite_composite_warnings) issueParts.push(`${s.satellite_composite_warnings} composite warning(s)`);
+    issueParts.push(`satellite: ${s.satellite_backend || "unknown"}`);
+    setText("monitorWarnings", issueParts.join(" · "));
 
     const limits = data.limits || {};
     meter("monitorPagesHard", s.pages_bytes || 0, limits.pages_hard_bytes || 0);

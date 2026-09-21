@@ -127,6 +127,7 @@ def main() -> int:
 
     download_bytes = sum(item["bytes"] for item in by_source.values())
     elapsed_total = sum(float(step.get("elapsed_seconds") or 0) for step in steps)
+    failed_steps = [step for step in steps if int(step.get("exit_code") or 0) != 0]
     pipeline_wall_seconds = None
     try:
         pipeline_wall_seconds = max(
@@ -178,11 +179,17 @@ def main() -> int:
             "interactive_layers": len(interactive.get("layers") or []),
             "satellite_products": len(satellite_products),
             "satellite_composite_warnings": len(composite_warnings),
+            "failed_processing_steps": len(failed_steps),
+            "satellite_backend": satellite_meta.get("backend") or "unknown",
         },
         "products": {
             "interactive_fields": sorted((interactive.get("fields") or {}).keys()),
             "satellite_products": sorted(satellite_products.keys()),
             "satellite_composite_warnings": composite_warnings,
+            "failed_processing_steps": [
+                {"name": step.get("name"), "exit_code": step.get("exit_code")}
+                for step in failed_steps
+            ],
         },
         "downloads": [
             {
