@@ -317,6 +317,11 @@ def natural_earth_boundaries() -> dict:
 
 def render(input_dir: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
+    # The normal workflow renders EUMETView first. Keep that 24 h Geo Colour
+    # product available as a display fallback while Satpy's native geo_color
+    # auxiliary imagery is unavailable.
+    previous = legacy.load_previous_metadata(output)
+    previous_geocolour = dict((previous.get("products") or {}).get("geocolour") or {})
     # netCDF-C access used by the FCI reader is not safe under concurrent
     # threaded reads. Keep the native FCI graph single-threaded while it is
     # materialized; this does not affect the separate ICON/MetPy pipeline.
@@ -363,8 +368,21 @@ def render(input_dir: Path, output: Path) -> dict:
                 composite_warnings.append(f"geo_color: isolated render failed: {type(error).__name__}: {error}")
 
     # Commit compatible files only after all expensive processing succeeded.
-    legacy.atomic_save_webp(natural, output / "geocolour-raw.webp")
-    legacy.atomic_save_webp(legacy.decorate(natural, countries), output / "geocolour.webp")
+    native_geo_color = composite_images.pop("geo_color", None)
+    if native_geo_color is not None:
+        legacy.atomic_save_webp(native_geo_color, output / "geocolour-raw.webp")
+        legacy.atomic_save_webp(legacy.decorate(native_geo_color, countries), output / "geocolour.webp")
+        geocolour_mode = "native-geo-color"
+    elif legacy.fallback_available(output, previous, "geocolour"):
+        # Do not overwrite the WMS Geo Colour files rendered immediately before
+        # this native pass. Unlike Satpy natural_color, this product remains
+        # useful during night.
+        geocolour_mode = "wms-fallback"
+    else:
+        legacy.atomic_save_webp(natural, output / "geocolour-raw.webp")
+        legacy.atomic_save_webp(legacy.decorate(natural, countries), output / "geocolour.webp")
+        geocolour_mode = "native-natural-color"
+
     legacy.atomic_save_webp(ir_display, output / "ir105-raw.webp")
     legacy.atomic_save_webp(legacy.decorate(ir_display, countries), output / "ir105.webp")
     write_float_grid(bt_k, output / "ir105-bt.f32.gz")
@@ -378,6 +396,46 @@ def render(input_dir: Path, output: Path) -> dict:
     height, width = bt_k.shape[-2:]
     dx = (east - west) / width
     dy = (north - south) / height
+
+    if geocolour_mode == "native-geo-color":
+        cfg = COMPOSITE_SPECS["geo_color"]
+        geocolour_product = {
+            "file": "geocolour.webp",
+            "raw_file": "geocolour-raw.webp",
+            "title": "Meteosat FCI · Geo Colour · native Level-1c",
+            "subtitle": cfg["subtitle"],
+            "definition": cfg["definition"],
+            "method": cfg["method"],
+            "source_kind": "native-derived",
+            "source_label": "EUMETSAT FCI Level-1c → Satpy GeoColor",
+            "observed_at": observed_at,
+            "stale": False,
+        }
+    elif geocolour_mode == "wms-fallback":
+        geocolour_product = previous_geocolour
+        geocolour_product.update({
+            "title": "Meteosat FCI · Natural colour",
+            "subtitle": "24 h EUMETView Geo Colour display retained while native Satpy GeoColor is unavailable",
+            "definition": "A day/night Geo Colour composite for continuous cloud and surface context.",
+            "method": "EUMETSAT EUMETView WMS Geo Colour image. Retained as the 24 h display layer while Satpy's native GeoColor auxiliary imagery is unavailable.",
+            "source_kind": "rendered-image",
+            "source_label": "EUMETSAT EUMETView WMS · Geo Colour",
+        })
+    else:
+        geocolour_product = {
+            "file": "geocolour.webp",
+            "raw_file": "geocolour-raw.webp",
+            "title": "Meteosat FCI · Natural colour · native Level-1c",
+            "subtitle": "Satpy natural_color composite resampled to the read-sensor Europe grid",
+            "definition": "A multispectral RGB composite designed to approximate a natural daytime appearance of clouds and the surface.",
+            "method": "Native FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → WebP.",
+            "source_kind": "native-derived",
+            "source_label": "EUMETSAT FCI Level-1c → Satpy",
+            "daylight_only": True,
+            "daylight_coverage_fraction": daylight_coverage_fraction,
+            "observed_at": observed_at,
+            "stale": False,
+        }
 
     metadata = {
         "generated_at": generated_at,
@@ -393,17 +451,7 @@ def render(input_dir: Path, output: Path) -> dict:
         "degraded": False,
         "warnings": [],
         "products": {
-            "geocolour": {
-                "file": "geocolour.webp",
-                "raw_file": "geocolour-raw.webp",
-                "title": "Meteosat FCI · Natural colour · native Level-1c",
-                "subtitle": "Satpy natural_color composite resampled to the read-sensor Europe grid",
-                "definition": "A multispectral RGB composite designed to approximate a natural daytime appearance of clouds and the surface.",
-                "method": "Native FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → WebP.",
-                "source_kind": "native-derived",
-                "observed_at": observed_at,
-                "stale": False,
-            },
+            "geocolour": geocolour_product,
             "ir105": {
                 "file": "ir105.webp",
                 "raw_file": "ir105-raw.webp",

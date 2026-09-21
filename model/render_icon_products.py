@@ -792,6 +792,7 @@ def main() -> int:
         "label": "EUMETSAT FCI Level-1c → Satpy" if satellite_native else "EUMETView WMS image",
         "queryable_ir": "sat_ir105_bt" in (satellite_meta.get("numeric_fields") or {}),
     }
+    geocolour_product = (satellite_meta.get("products", {}).get("geocolour", {}) or {})
 
     time_steps = []
     current_raw = None
@@ -828,10 +829,12 @@ def main() -> int:
             for layer in step_meta["layers"]:
                 if layer.get("id") == "satellite_geocolour":
                     layer["label"] = "Meteosat FCI · Natural colour"
-                    layer["source_kind"] = satellite_source["kind"]
-                    layer["source_label"] = satellite_source["label"]
-                    layer["definition"] = "A multispectral RGB composite designed to resemble the visible appearance of clouds and the surface."
-                    layer["method"] = (
+                    layer["source_kind"] = geocolour_product.get("source_kind") or satellite_source["kind"]
+                    layer["source_label"] = geocolour_product.get("source_label") or satellite_source["label"]
+                    layer["daylight_only"] = bool(geocolour_product.get("daylight_only"))
+                    layer["daylight_coverage_fraction"] = geocolour_product.get("daylight_coverage_fraction")
+                    layer["definition"] = geocolour_product.get("definition") or "A multispectral RGB composite designed to resemble the visible appearance of clouds and the surface."
+                    layer["method"] = geocolour_product.get("method") or (
                         "Native EUMETSAT FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → WebP."
                         if satellite_native
                         else "Rendered EUMETView WMS image downloaded for display; no underlying numerical grid is available from this fallback."
