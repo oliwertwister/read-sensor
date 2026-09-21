@@ -166,32 +166,54 @@ def europe_area():
     )
 
 
-def load_scene(input_dir: Path):
+def scene_files(input_dir: Path):
     files = find_files_and_readers(base_dir=str(input_dir), reader=READER)
     if not files:
         raise RuntimeError(f"Satpy found no {READER} files in {input_dir}")
+    return files
+
+
+def resample_scene(files, datasets: list[str], target):
     source_scene = Scene(filenames=files)
-    source_scene.load(["natural_color", "ir_105"], upper_right_corner="NE")
-    loaded_composites = []
-    warnings = []
-    for key, cfg in COMPOSITE_SPECS.items():
-        try:
-            source_scene.load([cfg["dataset"]], upper_right_corner="NE")
-            if cfg["dataset"] in source_scene:
-                loaded_composites.append(key)
-            else:
-                warnings.append(f"{key}: Satpy did not expose {cfg['dataset']}")
-        except Exception as error:
-            warnings.append(f"{key}: {type(error).__name__}: {error}")
-    target = europe_area()
+    source_scene.load(datasets, upper_right_corner="NE")
     resampled_scene = source_scene.resample(
         target,
         resampler="nearest",
         radius_of_influence=5000,
     )
-    # Keep source_scene alive while lazy resampled datasets are computed. The
-    # FCI reader's NetCDF file handlers belong to the source Scene.
-    return source_scene, resampled_scene, loaded_composites, warnings
+    return source_scene, resampled_scene
+
+
+def load_scene(input_dir: Path):
+    files = scene_files(input_dir)
+    target = europe_area()
+    warnings = []
+
+    # Keep GeoColor out of the shared graph. It pulls Satpy auxiliary imagery,
+    # so an auxiliary-reader failure must not abort the other FCI composites.
+    shared_specs = {k: v for k, v in COMPOSITE_SPECS.items() if k != "geo_color"}
+    shared_datasets = ["natural_color", "ir_105", *[cfg["dataset"] for cfg in shared_specs.values()]]
+    source_scene, resampled_scene = resample_scene(files, shared_datasets, target)
+
+    loaded_composites = []
+    for key, cfg in shared_specs.items():
+        if cfg["dataset"] in resampled_scene:
+            loaded_composites.append(key)
+        else:
+            warnings.append(f"{key}: Satpy did not expose {cfg['dataset']} after resampling")
+
+    geo_source = None
+    geo_scene = None
+    try:
+        geo_source, geo_scene = resample_scene(files, ["geo_color"], target)
+        if "geo_color" not in geo_scene:
+            warnings.append("geo_color: Satpy did not expose geo_color after resampling")
+            geo_source = None
+            geo_scene = None
+    except Exception as error:
+        warnings.append(f"geo_color: isolated load/resample failed: {type(error).__name__}: {error}")
+
+    return source_scene, resampled_scene, loaded_composites, warnings, geo_source, geo_scene
 
 
 def save_enhanced(scene: Scene, dataset: str, destination: Path) -> Image.Image:
@@ -233,6 +255,19 @@ def write_float_grid(values: np.ndarray, path: Path) -> None:
     os.replace(tmp, path)
 
 
+def webp_storage(output: Path, stem: str) -> dict:
+    decorated = output / f"{stem}.webp"
+    raw = output / f"{stem}-raw.webp"
+    decorated_bytes = decorated.stat().st_size
+    raw_bytes = raw.stat().st_size
+    return {
+        "bytes": decorated_bytes + raw_bytes,
+        "decorated_bytes": decorated_bytes,
+        "raw_bytes": raw_bytes,
+        "files": 2,
+    }
+
+
 def natural_earth_boundaries() -> dict:
     payload = legacy.fetch_bytes(legacy.COUNTRIES_URL, attempts=3)
     countries = json.loads(payload.decode("utf-8"))
@@ -247,7 +282,14 @@ def render(input_dir: Path, output: Path) -> dict:
     # threaded reads. Keep the native FCI graph single-threaded while it is
     # materialized; this does not affect the separate ICON/MetPy pipeline.
     with dask.config.set(scheduler="synchronous"):
-        source_scene, scene, loaded_composites, composite_warnings = load_scene(input_dir)
+        (
+            source_scene,
+            scene,
+            loaded_composites,
+            composite_warnings,
+            geo_source,
+            geo_scene,
+        ) = load_scene(input_dir)
         countries = natural_earth_boundaries()
 
         natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
@@ -261,6 +303,17 @@ def render(input_dir: Path, output: Path) -> dict:
                 composite_images[key] = save_enhanced(scene, cfg["dataset"], output / f"_satpy-{cfg['file_stem']}")
             except Exception as error:
                 composite_warnings.append(f"{key}: render failed: {type(error).__name__}: {error}")
+
+        if geo_scene is not None:
+            cfg = COMPOSITE_SPECS["geo_color"]
+            try:
+                composite_images["geo_color"] = save_enhanced(
+                    geo_scene,
+                    cfg["dataset"],
+                    output / f"_satpy-{cfg['file_stem']}",
+                )
+            except Exception as error:
+                composite_warnings.append(f"geo_color: isolated render failed: {type(error).__name__}: {error}")
 
     # Commit compatible files only after all expensive processing succeeded.
     legacy.atomic_save_webp(natural, output / "geocolour-raw.webp")
@@ -347,6 +400,7 @@ def render(input_dir: Path, output: Path) -> dict:
             "definition": cfg["definition"],
             "method": cfg["method"],
             "source_kind": "native-derived",
+            "storage": webp_storage(output, stem),
         }
 
     tmp = output / "latest.json.tmp"

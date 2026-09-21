@@ -151,6 +151,18 @@ def main() -> int:
     interactive = model_meta.get("interactive") or {}
     satellite_products = satellite_meta.get("products") or {}
     composite_warnings = satellite_meta.get("composite_warnings") or []
+    satellite_product_storage = []
+    for key, product in satellite_products.items():
+        storage = product.get("storage") or {}
+        if storage.get("bytes") is not None:
+            satellite_product_storage.append({
+                "product": key,
+                "bytes": int(storage.get("bytes") or 0),
+                "raw_bytes": int(storage.get("raw_bytes") or 0),
+                "decorated_bytes": int(storage.get("decorated_bytes") or 0),
+                "files": int(storage.get("files") or 0),
+            })
+    satellite_product_storage.sort(key=lambda item: item["bytes"], reverse=True)
 
     disk = shutil.disk_usage(".")
     payload = {
@@ -209,6 +221,7 @@ def main() -> int:
             {"area": key, **value}
             for key, value in sorted(by_area.items(), key=lambda item: item[1]["bytes"], reverse=True)
         ],
+        "satellite_product_storage": satellite_product_storage,
         "largest_files": top_files[:20],
         "limits": LIMITS,
         "runner": {

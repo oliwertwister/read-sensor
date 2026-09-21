@@ -1,5 +1,5 @@
 eumdac==3.1.1
-satpy==0.60.0
+satpy[generic-image]==0.60.0
 netCDF4>=1.7,<2
 hdf5plugin>=5,<7
 

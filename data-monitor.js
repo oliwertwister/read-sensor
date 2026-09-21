@@ -133,6 +133,12 @@
       (r) => bytes(r.bytes),
       (r) => String(r.files ?? 0),
     ]);
+    tableBody("monitorSatelliteStorageBody", data.satellite_product_storage || [], [
+      "product",
+      (r) => bytes(r.bytes),
+      (r) => bytes(r.raw_bytes),
+      (r) => bytes(r.decorated_bytes),
+    ]);
     tableBody("monitorLargestBody", data.largest_files || [], [
       "path",
       (r) => bytes(r.bytes),
