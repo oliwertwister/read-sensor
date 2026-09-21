@@ -16,6 +16,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import metpy.calc as mpcalc
+from metpy.units import units
 from PIL import Image
 
 import render_icon_synoptic as syn
@@ -68,6 +70,11 @@ DISPLAY_SPECS = {
         "vmin": 0.0, "vmax": 100.0, "contours": [20, 40, 60, 80, 90, 100],
         "line_color": "#166b8f", "decimals": 0,
     },
+    "dewpoint2m": {
+        "label": "2 m dew point", "unit": "degrees_celsius", "cmap": "coolwarm",
+        "vmin": -25.0, "vmax": 25.0, "contours": list(np.arange(-30, 31, 5)),
+        "line_color": "#8b4513", "decimals": 1, "label_every": 10,
+    },
     "cloud": {
         "label": "Total cloud cover", "unit": "%", "cmap": "Greys",
         "vmin": 0.0, "vmax": 100.0, "contours": [20, 40, 60, 80, 100],
@@ -108,6 +115,21 @@ PRESSURE_DISPLAY_SPECS = {
         "vmin": 0.0, "vmax": 50.0, "contours": [5, 10, 15, 20, 25, 30, 40, 50, 60],
         "line_color": "#9b4f00", "decimals": 1, "label_every": 10,
     },
+    "theta": {
+        "label": "Potential temperature", "unit": "K", "cmap": "magma",
+        "vmin": 260.0, "vmax": 360.0, "contours": list(np.arange(250, 381, 5)),
+        "line_color": "#7a3e00", "decimals": 1, "label_every": 10,
+    },
+    "vorticity": {
+        "label": "Relative vorticity", "unit": "1e-5 s^-1", "cmap": "RdBu_r",
+        "vmin": -20.0, "vmax": 20.0, "contours": list(np.arange(-30, 31, 5)),
+        "line_color": "#6a1b9a", "decimals": 1, "label_every": 10,
+    },
+    "divergence": {
+        "label": "Horizontal divergence", "unit": "1e-5 s^-1", "cmap": "PuOr",
+        "vmin": -20.0, "vmax": 20.0, "contours": list(np.arange(-30, 31, 5)),
+        "line_color": "#00695c", "decimals": 1, "label_every": 10,
+    },
 }
 
 
@@ -126,6 +148,9 @@ def pressure_spec(kind: str, level: int) -> dict:
         spec["vmin"], spec["vmax"] = ranges[level]
     elif kind == "wind":
         ranges = {850: (0.0, 35.0), 700: (0.0, 45.0), 500: (0.0, 55.0)}
+        spec["vmin"], spec["vmax"] = ranges[level]
+    elif kind == "theta":
+        ranges = {850: (270.0, 330.0), 700: (280.0, 345.0), 500: (300.0, 370.0)}
         spec["vmin"], spec["vmax"] = ranges[level]
     return spec
 
@@ -243,20 +268,48 @@ def prepared_fields_from_grids(grids: dict) -> tuple[dict[str, np.ndarray], np.n
     lats = np.asarray(base[lat_name].values, dtype=np.float64)
     lons = np.asarray(base[lon_name].values, dtype=np.float64)
 
+    temperature_k = np.asarray(grids["t_2m"].values, dtype=np.float32)
+    rh2m = np.asarray(grids["relhum_2m"].values, dtype=np.float32)
     arrays = {
-        "t2m": np.asarray(grids["t_2m"].values, dtype=np.float32) - 273.15,
+        "t2m": temperature_k - 273.15,
         "pmsl": np.asarray(grids["pmsl"].values, dtype=np.float32) / 100.0,
-        "rh2m": np.asarray(grids["relhum_2m"].values, dtype=np.float32),
+        "rh2m": rh2m,
         "cloud": np.asarray(grids["clct"].values, dtype=np.float32),
         "precip": np.asarray(grids["tot_prec"].values, dtype=np.float32),
     }
+    arrays["dewpoint2m"] = np.asarray(
+        mpcalc.dewpoint_from_relative_humidity(
+            temperature_k * units.kelvin,
+            rh2m * units.percent,
+        ).to("degC").magnitude,
+        dtype=np.float32,
+    )
+
+    dx, dy = mpcalc.lat_lon_grid_deltas(lons * units.degree, lats * units.degree)
     for level in PRESSURE_LEVELS_HPA:
-        arrays[f"temp_{level}"] = np.asarray(grids[f"t_{level}"].values, dtype=np.float32) - 273.15
+        temp_k = np.asarray(grids[f"t_{level}"].values, dtype=np.float32)
+        arrays[f"temp_{level}"] = temp_k - 273.15
         arrays[f"z_{level}"] = np.asarray(grids[f"fi_{level}"].values, dtype=np.float32) / 9.80665 / 10.0
         arrays[f"rh_{level}"] = np.asarray(grids[f"rh_{level}"].values, dtype=np.float32)
         pu = np.asarray(grids[f"u_{level}"].values, dtype=np.float32)
         pv = np.asarray(grids[f"v_{level}"].values, dtype=np.float32)
         arrays[f"wind_{level}"] = np.hypot(pu, pv).astype(np.float32)
+        arrays[f"theta_{level}"] = np.asarray(
+            mpcalc.potential_temperature(level * units.hPa, temp_k * units.kelvin).magnitude,
+            dtype=np.float32,
+        )
+        arrays[f"vorticity_{level}"] = np.asarray(
+            mpcalc.vorticity(
+                pu * units("m/s"), pv * units("m/s"), dx=dx, dy=dy,
+            ).to("1/s").magnitude * 1e5,
+            dtype=np.float32,
+        )
+        arrays[f"divergence_{level}"] = np.asarray(
+            mpcalc.divergence(
+                pu * units("m/s"), pv * units("m/s"), dx=dx, dy=dy,
+            ).to("1/s").magnitude * 1e5,
+            dtype=np.float32,
+        )
         arrays[f"_u_{level}"] = pu
         arrays[f"_v_{level}"] = pv
     u = np.asarray(grids["u_10m"].values, dtype=np.float32)
@@ -451,7 +504,7 @@ def interactive_metadata(
     pressure_fields = {}
     for level in PRESSURE_LEVELS_HPA:
         pressure_fields[str(level)] = {}
-        for kind in ("temp", "z", "rh", "wind"):
+        for kind in ("temp", "z", "rh", "wind", "theta", "vorticity", "divergence"):
             field_id = f"{kind}_{level}"
             array = arrays[field_id]
             spec = pressure_spec(kind, level)
@@ -571,6 +624,7 @@ def main() -> int:
 
     satellite_observed_at = None
     satellite_generated_at = None
+    satellite_meta = {}
     satellite_meta_path = Path(args.satellite_meta)
     if satellite_meta_path.exists():
         satellite_meta = json.loads(satellite_meta_path.read_text(encoding="utf-8"))
@@ -610,12 +664,20 @@ def main() -> int:
                 public_prefix=f"model/times/{step_key}",
             )
             step_meta["satellite_observed_at"] = satellite_observed_at
+            for field_id, field_meta in (satellite_meta.get("numeric_fields") or {}).items():
+                step_meta["fields"][field_id] = dict(field_meta)
+                if field_id == "sat_ir105_bt":
+                    for layer in step_meta["layers"]:
+                        if layer.get("id") == "satellite_ir105":
+                            layer["field"] = field_id
+                            layer["label"] = "MTG/FCI IR 10.5 µm · brightness temperature"
+                            break
             step_meta["dimensions"] = {
                 "time": {"forecast_hour": lead, "valid_at": step_meta["valid_at"]},
                 "horizontal": {"coordinates": ["latitude", "longitude"]},
                 "pressure_level_hpa": {
                     "values": list(PRESSURE_LEVELS_HPA),
-                    "variables": ["temperature", "geopotential_height", "relative_humidity", "wind"],
+                    "variables": ["temperature", "geopotential_height", "relative_humidity", "wind", "potential_temperature", "relative_vorticity", "horizontal_divergence"],
                 },
             }
             meta_file = step_dir / "meta.json"

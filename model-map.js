@@ -21,7 +21,7 @@
   };
 
   const iconEl = (id) => document.getElementById(id);
-  const FIELD_ORDER = ["t2m", "pmsl", "rh2m", "cloud", "precip", "wind"];
+  const FIELD_ORDER = ["t2m", "dewpoint2m", "pmsl", "rh2m", "cloud", "precip", "wind"];
 
   function modelTime(value) {
     const date = new Date(value || "");
@@ -624,6 +624,14 @@
       if (checked) ids.add(def.field);
     }
     const surface = FIELD_ORDER.filter((fieldId) => ids.has(fieldId));
+    const extras = [...ids].filter((fieldId) => {
+      const field = iconModelState.meta.fields[fieldId];
+      return field && field.pressure_level_hpa == null && !FIELD_ORDER.includes(fieldId);
+    }).sort((a, b) => {
+      const al = iconModelState.meta.fields[a]?.label || a;
+      const bl = iconModelState.meta.fields[b]?.label || b;
+      return al.localeCompare(bl);
+    });
     const pressure = [...ids].filter((fieldId) => {
       const field = iconModelState.meta.fields[fieldId];
       return field?.pressure_level_hpa != null;
@@ -632,7 +640,7 @@
       const bv = iconModelState.meta.fields[b]?.pressure_variable || "";
       return av.localeCompare(bv);
     });
-    return [...surface, ...pressure];
+    return [...surface, ...extras, ...pressure];
   }
 
   function formatPointCoordinate(latlng) {

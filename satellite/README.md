@@ -7,19 +7,19 @@ The satellite tab is generated independently of the sensor computer. Cloudflare 
 
 ## What is actually implemented today
 
-The current renderer is **not a Satpy pipeline**. It uses EUMETSAT **EUMETView WMS** as a rendered-image source:
+There are now two satellite backends.
 
-- `mtg_fd:rgb_geocolour` — MTG/FCI Geo Colour RGB;
-- `mtg_fd:ir105_hrfi` — MTG/FCI 10.5 µm thermal-infrared visual product.
+### Always-on WMS baseline
 
-`render_satellite.py` requests a PNG in `CRS:84` for 25°W–45°E / 30°N–72°N. It now preserves a clean georeferenced WebP for the interactive Leaflet map and separately uses Pillow to create the decorated Satellite-tab product with:
+satellite/render_satellite.py uses EUMETSAT EUMETView WMS to obtain the MTG/FCI Geo Colour RGB and IR 10.5 µm visual products. It publishes clean georeferenced WebP layers plus decorated versions with the WGS84 grid, Natural Earth Admin-0 boundaries and Berlin marker.
 
-- WGS84 latitude/longitude grid;
-- Natural Earth 1:50m Admin-0 country boundaries;
-- Berlin marker;
-- static WebP export plus `latest.json` metadata.
+### Credential-gated native FCI/Satpy upgrade
 
-This path is computationally cheap and works well for the current zero-cost GitHub Actions setup. It is a **visualisation pipeline**, not a numerical satellite-analysis pipeline.
+satellite/render_satpy.py runs after the WMS renderer only when EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET are configured. It downloads a bounded recent subset from collection EO:EUM:DAT:0662 with EUMDAC, currently requests coverage quarter Q4, uses a 75-minute default lag and a three-hour search window, then reads the files with Satpy reader fci_l1c_nc.
+
+The native path loads natural_color and calibrated ir_105, resamples onto a 0.05 degree regular Europe grid, and writes the same compatible geocolour and IR WebP files plus ir105-bt.f32.gz, a queryable Float32 brightness-temperature grid in kelvin.
+
+Native metadata is replaced atomically only after successful processing. Authentication, entitlement, dependency, download, read or resampling failures emit a warning and keep the already-rendered WMS products, so Satpy cannot make the normal Pages deployment less available.
 
 ## Critical limitation of the WMS approach
 
@@ -34,31 +34,20 @@ A WMS PNG is already rendered by the upstream server. We receive display pixels 
 
 Image-space interpolation of the PNG is possible, but it only interpolates rendered pixels. It does not recover missing physical information and should not be described as meteorological interpolation.
 
-## Native FCI + Satpy upgrade
+## Native FCI + Satpy operational path
 
-Satpy has an `fci_l1c_nc` reader for MTG FCI Level-1c NetCDF and supports resampling through `Scene.resample()` with nearest-neighbour, bilinear, EWA, native, and bucket resamplers. A quantitative pipeline would therefore look like:
+The implemented processing chain is:
 
-```text
-EUMETSAT Data Store / EUMDAC
-        ↓
-FCI Level-1c NetCDF chunks (spatial/channel subset)
-        ↓
-Satpy Scene(reader="fci_l1c_nc")
-        ↓
-calibrated channels / Satpy composites
-        ↓
-Satpy + pyresample to Europe target grid
-        ↓
-xarray / Dask-backed DataArrays as needed
-        ↓
-georeferenced display rasters + compact numerical query grids + metadata
-        ↓
-the same interactive Leaflet layer catalogue used by ICON-EU
-        ↓
-GitHub Pages
-```
+    EUMETSAT Data Store / EUMDAC
+        -> recent Q4 FCI Level-1c NetCDF chunks
+        -> Satpy Scene using fci_l1c_nc
+        -> natural_color + calibrated ir_105
+        -> Satpy / pyresample to 0.05 degree Europe grid
+        -> georeferenced WebP layers + IR 10.5 K Float32 grid + metadata
+        -> existing interactive Leaflet catalogue
+        -> GitHub Pages
 
-EUMETSAT Data Store downloads require registered-user authentication. Near-real-time FCI access may additionally depend on the applicable NRT licence. EUMETSAT explicitly recommends band and region-of-interest subsetting for FCI Level-1c processing because full products can be memory intensive. Credentials would have to remain GitHub Actions secrets and must never be written to the static Pages artifact.
+EUMETSAT Data Store downloads require registered-user authentication and product entitlement. Near-real-time availability can additionally depend on the applicable licence. Credentials remain GitHub Actions secrets; raw Level-1c chunks live only in an ephemeral temporary directory and are discarded at job end. The default 75-minute lag reduces reliance on immediate-NRT delivery but does not replace account or licence requirements.
 
 ## Where xarray and Dask fit
 
@@ -72,7 +61,7 @@ For this project the preferred sequence is:
 4. compute only the derived arrays needed for the published images;
 5. discard native input files when the job finishes.
 
-Dask becomes more valuable when multiple large NetCDF chunks or channels no longer fit comfortably in memory. It is unnecessary for the current WMS/Pillow renderer. Once native FCI arrays are available, calibrated channel values can be published into the same click-query/opacity/layer workflow now used by the interactive ICON-EU Leaflet map.
+Dask becomes more valuable when multiple large NetCDF chunks or channels no longer fit comfortably in memory. The current native path is deliberately bounded and does not introduce a distributed Dask cluster. Satpy may use Dask-backed arrays internally, but the job computes only the publication products and discards raw inputs afterward.
 
 ## Numerical weather models: separate from Satpy
 

@@ -8,49 +8,35 @@ The model pipeline now produces both the compact static synoptic image and a bou
 
 ## Current fields
 
-The build discovers the freshest complete regular-lat/lon run and chooses the forecast lead with valid time nearest the build time. It currently loads:
+The build discovers the freshest complete regular-lat/lon run and loads the existing surface and 850/700/500 hPa pressure-level fields. In addition to the directly decoded ICON variables, MetPy now derives:
 
-- `T_2M` - 2 m temperature, K to deg C;
-- `PMSL` - mean sea-level pressure, Pa to hPa;
-- `U_10M`, `V_10M` - 10 m wind components and derived wind speed;
-- `RELHUM_2M` - 2 m relative humidity;
-- `CLCT` - total cloud cover;
-- `TOT_PREC` - accumulated precipitation from model initialization to valid time;
-- pressure-level `T` at 850, 700, and 500 hPa - K to `degrees_celsius`;
-- pressure-level `FI` at 850, 700, and 500 hPa - geopotential converted to geopotential height in decametres (`dam`), with one-decimal query precision;
-- pressure-level `RELHUM` at 850, 700, and 500 hPa - relative humidity in percent;
-- pressure-level `U` / `V` at 850, 700, and 500 hPa - wind components plus derived speed and thinned vectors.
+- 2 m dew point from T_2M and RELHUM_2M;
+- potential temperature at 850, 700 and 500 hPa;
+- relative vorticity at 850, 700 and 500 hPa;
+- horizontal divergence at 850, 700 and 500 hPa.
 
+The original quantitative fields remain: T_2M, PMSL, U/V 10 m, RELHUM_2M, CLCT, TOT_PREC, pressure-level temperature, geopotential height, relative humidity and U/V wind. All derived fields use the same native regular ICON-EU grid and are published with the same raster, contour and Float32 query-grid conventions.
 
-The published model cube is therefore currently bounded as:
-
-```text
-time (3) × pressure_level (850/700/500 hPa) × pressure_variable (temperature/geopotential height/relative humidity/wind) × latitude × longitude
-```
-
-Surface fields remain separate physical vertical coordinates rather than being forced into the pressure-level axis.
-
-The selected regular-lat/lon product currently has 0.0625 degree grid spacing over the useful ICON-EU domain. Longitudes are normalized to -180..180 and latitude rows are stored north-to-south for browser raster alignment.
+The bounded pressure dimension is now temperature / geopotential height / relative humidity / wind / potential temperature / relative vorticity / horizontal divergence at 850/700/500 hPa. Surface diagnostics remain separate physical vertical coordinates.
 
 ## Processing stack
 
-```text
-DWD ICON-EU GRIB2
-    -> bz2 decompression
-    -> ecCodes / cfgrib
-    -> xarray DataArray
-    -> coordinate normalization + Europe subset
-    -> unit conversion / derived wind speed
-       -> transparent WebP colour rasters
-       -> GeoJSON isolines
-       -> GeoJSON thinned wind vectors
-       -> Float32 native query grids
-       -> compact static synoptic.webp
-    -> GitHub Pages
-    -> Leaflet
-```
+    DWD ICON-EU GRIB2
+        -> bz2 decompression
+        -> ecCodes / cfgrib
+        -> xarray DataArray
+        -> coordinate normalization + Europe subset
+        -> MetPy diagnostics
+        -> unit conversion / derived wind speed
+        -> transparent WebP colour rasters
+        -> GeoJSON isolines
+        -> GeoJSON thinned wind vectors
+        -> Float32 native query grids
+        -> compact static synoptic.webp
+        -> GitHub Pages
+        -> Leaflet
 
-Dask is intentionally not used for the current three-valid-time build. Each valid time is loaded, transformed, written, and released sequentially, so peak memory remains close to one time slice. Dask becomes useful when the project expands to substantially larger time windows, many pressure levels, ensemble dimensions, or native FCI products large enough to benefit from chunked lazy computation.
+Dask is intentionally not used explicitly for the current three-valid-time build. Each valid time is loaded, transformed, written and released sequentially, so peak memory remains close to one time slice.
 
 ## Interactive Leaflet outputs
 
@@ -92,22 +78,11 @@ OpenLayers becomes preferable if the browser starts doing substantial numerical-
 
 ## Satpy integration path
 
-Satpy is still not in the live satellite build. Current MTG/FCI layers are rendered EUMETView WMS pixels and therefore are not quantitatively queryable.
+The workflow now contains an optional native satellite backend in satellite/render_satpy.py. EUMetView WMS is rendered first as the guaranteed fallback. If EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET are available, the second stage downloads a bounded FCI Level-1c subset through EUMDAC.
 
-Planned native path:
+The native path uses Satpy reader fci_l1c_nc, loads natural_color and calibrated ir_105, resamples to a 0.05 degree regular Europe grid, writes compatible WebP layers, and publishes an IR 10.5 brightness-temperature Float32 query grid. Successful native processing exposes sat_ir105_bt to map point queries.
 
-```text
-EUMETSAT Data Store / EUMDAC
-    -> MTG FCI Level-1c NetCDF subset
-    -> Satpy Scene(reader="fci_l1c_nc")
-    -> calibrated channels / Satpy composites
-    -> Satpy + pyresample
-    -> xarray DataArrays
-    -> same raster + query-grid layer catalogue
-    -> Leaflet
-```
-
-This will allow native-channel values such as calibrated brightness temperatures to participate in the same point-query and opacity/layer workflow. Native FCI access, authentication, and redistribution/licensing requirements must be resolved before enabling that path in GitHub Actions.
+Failure is non-fatal: native metadata is written only after processing succeeds, while the preceding WMS files remain usable. Native availability still depends on the EUMETSAT account's product and licence access.
 
 ## Interpretation and limitations
 
@@ -129,5 +104,6 @@ The WMS satellite layers remain visual products only. Their pixel colours cannot
 8. xarray I/O: https://docs.xarray.dev/en/latest/user-guide/io.html
 9. Matplotlib contouring: https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.contour.html
 10. Leaflet: https://leafletjs.com/
-11. Satpy FCI L1c reader: https://satpy.readthedocs.io/en/latest/api/satpy.readers.fci_l1c_nc.html
-12. Satpy resampling: https://satpy.readthedocs.io/en/latest/resample.html
+11. MetPy calculations: https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.html
+12. Satpy FCI Level-1c reader: https://satpy.readthedocs.io/en/latest/api/satpy.readers.fci_l1c_nc.html
+13. Satpy resampling: https://satpy.readthedocs.io/en/latest/resample.html

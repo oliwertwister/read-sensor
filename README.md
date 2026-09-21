@@ -13,9 +13,9 @@ The project deliberately separates a static public frontend from data collection
 - **Sensors** — D1-backed telemetry with selectable latest-N or rolling-window history, optional 5/10/15/20/25-minute averaging, CSV export, a time-series chart, and a normalized temperature-distribution line plot.
 - **Berlin Weather** — current conditions from Open-Meteo.
 - **Aviation Weather** — worldwide station search, map selection, and METAR/TAF retrieval through the Aviation Weather Center Data API.
-- **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields are T2M, PMSL, RH2M, total cloud cover, accumulated precipitation, 10 m wind, plus temperature, geopotential height, relative humidity, and wind on the bounded 850/700/500 hPa pressure dimension.
+- **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields include T2M, MetPy-derived 2 m dew point, PMSL, RH2M, total cloud cover, accumulated precipitation and 10 m wind, plus temperature, geopotential height, relative humidity, wind, potential temperature, relative vorticity and horizontal divergence at 850/700/500 hPa.
 - **SYNOP** — worldwide WMO station search plus a recent-report map assembled from DWD SYNOP feeds; selected raw `AAXX` reports are decoded in the browser when available.
-- **Satellite** — EUMETSAT EUMETView WMS imagery for MTG/FCI, rendered autonomously with a coordinate grid, country boundaries, and Berlin marker.
+- **Satellite** — resilient EUMETView WMS imagery remains the baseline; an optional credential-gated EUMDAC + Satpy path can replace it with native MTG/FCI Level-1c products and a queryable IR brightness-temperature grid.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid and local geometry loading.
 
 ## Telemetry architecture
@@ -32,26 +32,29 @@ The Berlin Map accepts GeoJSON/JSON, GeoPackage (`.gpkg`), and Shapefiles either
 
 Vendored parser notices are listed in [`vendor/THIRD_PARTY_NOTICES.md`](vendor/THIRD_PARTY_NOTICES.md).
 
-## Satellite processing: implemented vs planned
+## Satellite processing: WMS baseline + optional native Satpy path
 
-The current satellite renderer is intentionally lightweight. `satellite/render_satellite.py` requests already-rendered PNG imagery from **EUMETSAT EUMETView WMS**, crops the requested Europe extent, and adds overlays with Pillow. It does **not** currently download native FCI Level-1c numerical data and it does **not** currently run Satpy. See [`satellite/README.md`](satellite/README.md) for the detailed limitations and upgrade path.
+The satellite build now has two layers of resilience. The always-on satellite/render_satellite.py path requests rendered MTG/FCI imagery from EUMETSAT EUMETView WMS and publishes the existing WebP products. A second, optional satellite/render_satpy.py stage activates only when EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET are available as GitHub Actions secrets.
 
-This distinction matters: the WMS path is appropriate for a zero-cost visual dashboard, but it cannot provide the native calibrated channel arrays needed for quantitative multispectral calculations, native-resolution resampling, channel algebra, or physically meaningful interpolation of satellite measurements.
+The native stage downloads a bounded MTG/FCI Level-1c subset through EUMDAC, reads it with Satpy's fci_l1c_nc reader, resamples natural colour and IR 10.5 µm onto the Europe target grid, and publishes a queryable IR brightness-temperature Float32 grid. It replaces the compatible satellite outputs only after successful native processing. Authentication, entitlement, download or Satpy failures therefore leave the WMS products intact and do not block Pages deployment.
+
+The distinction remains important: WMS products are display pixels; only the native Satpy path provides calibrated FCI arrays suitable for quantitative satellite work.
 
 ## Numerical model analysis path
 
-The quantitative ICON-EU build is orchestrated by [`model/render_icon_products.py`](model/render_icon_products.py), with the compact static renderer retained in [`model/render_icon_synoptic.py`](model/render_icon_synoptic.py). Details are in [`model/README.md`](model/README.md). The pipeline uses native DWD ICON-EU regular-lat/lon GRIB2 fields rather than extracting values from rendered charts.
+The quantitative ICON-EU build is orchestrated by model/render_icon_products.py, with the compact static renderer retained in model/render_icon_synoptic.py. The pipeline uses native DWD ICON-EU regular-lat/lon GRIB2 fields rather than extracting values from rendered charts.
 
 1. discover the freshest complete ICON-EU run/lead combination;
 2. download the required surface and pressure-level fields once per build;
-3. decode GRIB2 with **ecCodes/cfgrib** into **xarray** arrays;
+3. decode GRIB2 with ecCodes/cfgrib into xarray arrays;
 4. normalize coordinates and subset the Europe domain;
-5. derive display units and 10 m wind speed;
-6. export independent transparent WebP colour rasters, GeoJSON isolines, GeoJSON wind vectors, and native Float32 grids for point queries;
-7. generate the legacy compact satellite + isobar/isotherm/wind static synoptic product from the same build;
-8. let Leaflet compose the interactive layers in the browser rather than flattening them into one image.
+5. use MetPy to derive 2 m dew point plus pressure-level potential temperature, relative vorticity and horizontal divergence;
+6. derive display units and wind speed;
+7. export independent transparent WebP colour rasters, GeoJSON isolines, GeoJSON wind vectors and native Float32 grids for point queries;
+8. generate the compact satellite + isobar/isotherm/wind static synoptic product from the same build;
+9. let Leaflet compose the interactive layers in the browser rather than flattening them into one image.
 
-**Dask is not used yet** because the current bounded three-time/three-pressure-level workload is processed sequentially and still fits comfortably in memory. It remains appropriate for substantially larger time/pressure/channel cubes where lazy loading and chunked computation materially reduce memory pressure.
+Dask is still not used explicitly for the bounded ICON build because each valid time is processed sequentially. It remains appropriate for materially larger time/pressure/channel cubes.
 
 ### Interactive field explorer and map engine
 
@@ -59,14 +62,14 @@ The interactive model viewer intentionally remains on **Leaflet** for now. Its c
 
 A move to **OpenLayers** becomes attractive if the browser starts doing substantial numerical-raster work itself: client-side reprojection, WebGL raster expressions, many simultaneously animated time slices, large Cloud-Optimized GeoTIFFs, or GPU-heavy multidimensional styling. Until then the architecture keeps the map-library boundary clean so the backend products can be consumed by either engine.
 
-The Satpy upgrade is designed to plug into the same layer catalogue. Native MTG/FCI Level-1c channels would be read through Satpy, calibrated/resampled with Satpy/pyresample, and published as additional georeferenced rasters plus queryable numerical grids. The current EUMETView WMS imagery remains a lightweight fallback/background until native FCI access and licensing are resolved.
+The optional Satpy backend now plugs into the same layer catalogue. Native MTG/FCI Level-1c chunks are calibrated/resampled with Satpy/pyresample and the IR 10.5 µm brightness-temperature array is published as a queryable numerical grid. EUMETView WMS remains the unconditional fallback.
 
 This supports real meteorological plotting such as:
 
 - mean-sea-level-pressure **isobars** from `pmsl`;
 - 2 m **isotherms** from `t_2m`;
-- pressure-level temperature, geopotential height, relative humidity, and wind fields;
-- wind barbs/streamlines and derived wind speed;
+- pressure-level temperature, geopotential height, relative humidity, wind, potential temperature, relative vorticity and horizontal-divergence fields;
+- 2 m dew point, wind barbs/streamlines and derived wind speed;
 - precipitation and cloud-cover fields;
 - anomaly/difference maps between forecast steps or model runs.
 
@@ -114,18 +117,19 @@ The dashboard combines several independent upstream services. Availability, late
 2. **EUMETSAT EUMETView / MTG:** [MTG data resources](https://user.eumetsat.int/data/satellites/meteosat-third-generation/resources) and [MTG operations/data access](https://user.eumetsat.int/resources/user-guides/mtg-in-operations).
 3. **EUMETSAT Data Store / EUMDAC:** [Introductory Data Store guide](https://user.eumetsat.int/resources/user-guides/introductory-data-store-user-guide) and [EUMDAC guide](https://user.eumetsat.int/resources/user-guides/eumetsat-data-access-client-eumdac-guide).
 4. **Satpy:** [FCI L1c NetCDF reader](https://satpy.readthedocs.io/en/latest/api/satpy.readers.fci_l1c_nc.html) and [Satpy resampling](https://satpy.readthedocs.io/en/latest/resample.html).
-5. **DWD ICON-EU:** [ICON-EU Open Data GRIB directories](https://opendata.dwd.de/weather/nwp/icon-eu/grib/), including [`t_2m`](https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/t_2m/) and [`pmsl`](https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/pmsl/).
-6. **xarray / Dask:** [xarray parallel computing with Dask](https://docs.xarray.dev/en/latest/user-guide/dask.html) and [xarray I/O](https://docs.xarray.dev/en/latest/user-guide/io.html).
-7. **GRIB2 decoding:** [ECMWF cfgrib](https://github.com/ecmwf/cfgrib), which provides the `xarray` GRIB engine on top of ecCodes.
-8. **Aviation weather:** [Aviation Weather Center Data API](https://connect.aviationweather.gov/data/api/).
-9. **WMO station metadata:** [WMO OSCAR](https://oscar.wmo.int/surface/) / [OSCAR overview](https://space.oscar.wmo.int/).
-10. **General weather:** [Open-Meteo API documentation](https://open-meteo.com/en/docs).
-11. **Map data:** [OpenStreetMap](https://www.openstreetmap.org/) and [Natural Earth](https://www.naturalearthdata.com/).
-12. **GitHub Actions:** [billing and usage](https://docs.github.com/en/actions/concepts/billing-and-usage) and [GitHub-hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+5. **MetPy calculations:** https://unidata.github.io/MetPy/latest/api/generated/metpy.calc.html
+6. **DWD ICON-EU:** [ICON-EU Open Data GRIB directories](https://opendata.dwd.de/weather/nwp/icon-eu/grib/), including [`t_2m`](https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/t_2m/) and [`pmsl`](https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/pmsl/).
+7. **xarray / Dask:** [xarray parallel computing with Dask](https://docs.xarray.dev/en/latest/user-guide/dask.html) and [xarray I/O](https://docs.xarray.dev/en/latest/user-guide/io.html).
+8. **GRIB2 decoding:** [ECMWF cfgrib](https://github.com/ecmwf/cfgrib), which provides the `xarray` GRIB engine on top of ecCodes.
+9. **Aviation weather:** [Aviation Weather Center Data API](https://connect.aviationweather.gov/data/api/).
+10. **WMO station metadata:** [WMO OSCAR](https://oscar.wmo.int/surface/) / [OSCAR overview](https://space.oscar.wmo.int/).
+11. **General weather:** [Open-Meteo API documentation](https://open-meteo.com/en/docs).
+12. **Map data:** [OpenStreetMap](https://www.openstreetmap.org/) and [Natural Earth](https://www.naturalearthdata.com/).
+13. **GitHub Actions:** [billing and usage](https://docs.github.com/en/actions/concepts/billing-and-usage) and [GitHub-hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
 ### Licensing note
 
-Rendered visual products and original numerical data are not interchangeable from a licensing perspective. In particular, EUMETSAT licensing depends on product and use case. Native FCI Level-1c ingestion should be implemented only after confirming the applicable Data Store/NRT licence and redistribution conditions. The pipeline should publish derived visual products rather than republishing original licensed numerical files unless the applicable licence explicitly permits redistribution.
+Rendered visual products and original numerical data are not interchangeable from a licensing perspective. In particular, EUMETSAT licensing depends on product and use case. Native FCI Level-1c ingestion is credential-gated and must be used only under the applicable Data Store/NRT licence and redistribution conditions. The pipeline should publish derived visual products rather than republishing original licensed numerical files unless the applicable licence explicitly permits redistribution.
 
 ## Cost and retention safety policy
 
