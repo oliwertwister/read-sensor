@@ -2044,3 +2044,186 @@ a { color: #58a6ff; }
   .icon-secondary-products > summary { grid-template-columns:14px minmax(0,1fr); }
   .icon-map-stage, #iconInteractiveMap { min-height:500px; height:500px; }
 }
+/* ICON controls v2: pressure levels, compact metadata and active-layer HUD */
+.icon-primary-controls {
+  grid-template-columns:minmax(250px,300px) minmax(300px,1fr) auto auto;
+}
+.icon-pressure-strip {
+  grid-column:1 / -1;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  padding-top:9px;
+  border-top:1px solid #30363d;
+}
+.icon-pressure-strip > span {
+  flex:0 0 auto;
+  color:#8b949e;
+  font-size:.65rem;
+  font-weight:650;
+  letter-spacing:.035em;
+  text-transform:uppercase;
+}
+.icon-pressure-levels {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.icon-pressure-levels button {
+  min-height:30px;
+  padding:0 10px;
+  border:1px solid #30363d;
+  border-radius:999px;
+  background:#0d1117;
+  color:#c9d1d9;
+  font:inherit;
+  font-size:.68rem;
+  font-weight:650;
+  cursor:pointer;
+}
+.icon-pressure-levels button:hover {
+  border-color:#484f58;
+  background:#161b22;
+}
+.icon-pressure-levels button.is-active {
+  border-color:#388bfd;
+  background:rgba(56,139,253,.16);
+  color:#79c0ff;
+}
+.icon-meta-pills {
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+  margin:0 2px 12px;
+}
+.icon-meta-pill {
+  display:inline-flex;
+  align-items:baseline;
+  gap:6px;
+  min-width:0;
+  padding:5px 9px;
+  border:1px solid rgba(48,54,61,.85);
+  border-radius:999px;
+  background:#161b22;
+  line-height:1.2;
+}
+.icon-meta-pill small {
+  color:#8b949e;
+  font-size:.60rem;
+  font-weight:600;
+  letter-spacing:.025em;
+}
+.icon-meta-pill .icon-meta-value {
+  color:#c9d1d9;
+  font-size:.68rem !important;
+  font-weight:650 !important;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.icon-active-layers {
+  position:absolute;
+  z-index:700;
+  top:12px;
+  right:12px;
+  width:min(270px,38%);
+  max-height:52%;
+  overflow:auto;
+  border:1px solid rgba(48,54,61,.92);
+  border-radius:10px;
+  background:rgba(13,17,23,.91);
+  box-shadow:0 8px 24px rgba(0,0,0,.30);
+  backdrop-filter:blur(7px);
+}
+.icon-active-layers > summary {
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:34px;
+  padding:0 9px;
+  cursor:pointer;
+  list-style:none;
+  background:rgba(13,17,23,.96);
+  color:#e6edf3;
+  font-size:.68rem;
+  font-weight:700;
+}
+.icon-active-layers > summary::-webkit-details-marker { display:none; }
+.icon-active-layers > summary::before {
+  content:"›";
+  margin-right:5px;
+  color:#8b949e;
+  transition:transform .12s ease;
+}
+.icon-active-layers[open] > summary::before { transform:rotate(90deg); }
+.icon-active-layers > summary span { margin-right:auto; }
+.icon-active-layers > summary small {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:21px;
+  height:19px;
+  padding:0 5px;
+  border:1px solid #30363d;
+  border-radius:999px;
+  color:#8b949e;
+  font-size:.58rem;
+  font-variant-numeric:tabular-nums;
+}
+.icon-active-layers-list {
+  display:grid;
+  gap:5px;
+  padding:0 7px 7px;
+}
+.icon-active-layers-list > .muted {
+  margin:5px 2px;
+  font-size:.62rem;
+}
+.icon-active-layer-item {
+  display:grid;
+  gap:2px;
+  padding:6px 7px;
+  border:1px solid rgba(48,54,61,.72);
+  border-radius:7px;
+  background:rgba(22,27,34,.92);
+}
+.icon-active-layer-item strong {
+  overflow:hidden;
+  color:#e6edf3;
+  font-size:.62rem !important;
+  font-weight:650 !important;
+  line-height:1.3;
+  text-overflow:ellipsis;
+}
+.icon-active-layer-item small {
+  color:#8b949e;
+  font-size:.56rem;
+  line-height:1.35;
+}
+@media(max-width:1050px){
+  .icon-primary-controls {
+    grid-template-columns:minmax(210px,250px) minmax(230px,1fr) auto auto;
+  }
+}
+@media(max-width:900px){
+  .icon-active-layers { width:min(250px,44%); }
+}
+@media(max-width:760px){
+  .icon-pressure-strip {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+  .icon-meta-pills { gap:5px; }
+  .icon-meta-pill { max-width:100%; }
+  .icon-active-layers {
+    top:9px;
+    right:9px;
+    width:min(230px,55%);
+    max-height:42%;
+  }
+}

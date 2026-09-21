@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=icon-rethink-1">
+    <link rel="stylesheet" href="style.css?v=icon-controls-2">
   </head>
   <body>
     <header>
@@ -114,17 +114,21 @@
               <summary>Map options</summary>
               <div class="icon-map-settings-grid">
                 <label for="iconSampling"><span>Point sampling</span><select id="iconSampling"><option value="bilinear" selected>Bilinear</option><option value="nearest">Nearest grid point</option></select></label>
-                <label for="iconPressureLevel"><span>Pressure level</span><select id="iconPressureLevel" aria-label="Pressure level"><option>Loading…</option></select></label>
                 <label for="iconAnimSpeed"><span>Animation speed</span><select id="iconAnimSpeed" aria-label="Animation speed"><option value="1800">0.5×</option><option value="1000" selected>1×</option><option value="550">2×</option></select></label>
                 <label class="icon-anim-loop"><input id="iconAnimLoop" type="checkbox" checked> Loop animation</label>
               </div>
             </details>
+            <div class="icon-pressure-strip" aria-label="Pressure level">
+              <span>Upper-air level</span>
+              <div id="iconPressureLevels" class="icon-pressure-levels"></div>
+              <select id="iconPressureLevel" aria-label="Pressure level" hidden><option>Loading…</option></select>
+            </div>
           </div>
 
-          <div class="icon-context-line" aria-label="Forecast metadata">
-            <span><b>ICON-EU</b> run <strong id="iconMapRun">—</strong></span>
-            <span><b>Meteosat FCI</b> observed <strong id="iconMapSatellite">—</strong></span>
-            <span>grid <strong id="iconMapGrid">—</strong></span>
+          <div class="icon-meta-pills" aria-label="Forecast metadata">
+            <span class="icon-meta-pill"><small>ICON-EU run</small><span id="iconMapRun" class="icon-meta-value">—</span></span>
+            <span class="icon-meta-pill"><small>Meteosat FCI observed</small><span id="iconMapSatellite" class="icon-meta-value">—</span></span>
+            <span class="icon-meta-pill"><small>Native grid</small><span id="iconMapGrid" class="icon-meta-value">—</span></span>
           </div>
 
           <div class="icon-map-workspace">
@@ -136,6 +140,12 @@
 
             <div class="icon-map-stage">
               <div id="iconInteractiveMap" aria-label="Interactive ICON-EU weather map"></div>
+              <details id="iconActiveLayers" class="icon-active-layers" open>
+                <summary><span>Active layers</span><small id="iconActiveLayersCount">0</small></summary>
+                <div id="iconActiveLayersList" class="icon-active-layers-list">
+                  <p class="muted">No layers enabled.</p>
+                </div>
+              </details>
               <div id="iconMapCursor" class="icon-map-cursor">Move over map to inspect coordinates</div>
             </div>
           </div>
@@ -408,7 +418,7 @@
     <script src="geometry-ui.js?v=geometry-4"></script>
     <script src="app.js?v=icon-rethink-1"></script>
     <script src="cube-storage.js?v=zarr-r2-prototype-1"></script>
-    <script src="model-map.js?v=icon-rethink-1"></script>
+    <script src="model-map.js?v=icon-controls-2"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

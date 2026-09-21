@@ -231,6 +231,7 @@
       setMapStatus(`Could not load ${def.label}`, "warning");
     } finally {
       if (checkbox) checkbox.disabled = false;
+      updateActiveLayersSummary();
     }
   }
   function colorLegend(field) {
@@ -281,6 +282,7 @@
       const state = fieldGroup.querySelector(":scope > summary small");
       if (state) state.textContent = enabledKinds.length ? enabledKinds.join(" + ") : "Off";
     }
+    updateActiveLayersSummary();
   }
 
   function layerKindLabel(def) {
@@ -289,6 +291,82 @@
     if (def.kind === "vectors") return "Vectors";
     if (def.kind === "satellite") return "Image";
     return def.kind;
+  }
+
+  function layerIsVisible(def) {
+    const instance = iconModelState.instances.get(def.id);
+    return Boolean(instance && iconModelState.map?.hasLayer(instance));
+  }
+
+  function activeLayerDescription(def) {
+    if (def.id === "satellite_geocolour") {
+      return def.source_kind === "native-derived"
+        ? "Natural-colour image derived from FCI Level-1c data."
+        : "Natural-colour satellite display image.";
+    }
+    if (def.id === "satellite_ir105") {
+      return def.field === "sat_ir105_bt"
+        ? "Infrared image with queryable 10.5 µm brightness temperature."
+        : "Infrared 10.5 µm satellite display image.";
+    }
+    const descriptions = {
+      t2m: "Air temperature 2 m above ground.",
+      dewpoint2m: "Dew point 2 m above ground.",
+      pmsl: "Mean sea-level pressure.",
+      rh2m: "Relative humidity 2 m above ground.",
+      cloud: "Total cloud cover.",
+      precip: "Accumulated precipitation from model initialization.",
+      wind: "Wind speed and direction near the surface.",
+    };
+    if (def.field && descriptions[def.field]) return descriptions[def.field];
+    const upperAir = {
+      temperature: "Air temperature on the selected pressure surface.",
+      geopotential_height: "Height of the selected pressure surface.",
+      relative_humidity: "Relative humidity on the selected pressure surface.",
+      wind: "Wind on the selected pressure surface.",
+      theta: "Potential temperature on the selected pressure surface.",
+      vorticity: "Relative vorticity on the selected pressure surface.",
+      divergence: "Horizontal divergence on the selected pressure surface.",
+    };
+    if (def.pressure_variable && upperAir[def.pressure_variable]) return upperAir[def.pressure_variable];
+    return layerFieldLabel(def);
+  }
+
+  function updateActiveLayersSummary() {
+    const list = iconEl("iconActiveLayersList");
+    const count = iconEl("iconActiveLayersCount");
+    if (!list || !count || !iconModelState.meta) return;
+    const active = iconModelState.meta.layers.filter(layerIsVisible);
+    count.textContent = String(active.length);
+    list.replaceChildren();
+    if (!active.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No layers enabled.";
+      list.append(empty);
+      return;
+    }
+    for (const def of active) {
+      const item = document.createElement("div");
+      item.className = "icon-active-layer-item";
+      const title = document.createElement("strong");
+      const fieldName = def.kind === "satellite" ? def.label : layerFieldLabel(def);
+      title.textContent = `${fieldName} · ${layerKindLabel(def)}`;
+      const description = document.createElement("small");
+      description.textContent = activeLayerDescription(def);
+      item.append(title, description);
+      list.append(item);
+    }
+  }
+
+  function updatePressureButtons() {
+    const container = iconEl("iconPressureLevels");
+    if (!container) return;
+    for (const button of container.querySelectorAll("button[data-pressure-level]")) {
+      const active = Number(button.dataset.pressureLevel) === Number(iconModelState.selectedPressureLevel);
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
   }
 
   function layerSection(def) {
@@ -477,20 +555,33 @@
 
   function populatePressureControl() {
     const select = iconEl("iconPressureLevel");
+    const buttons = iconEl("iconPressureLevels");
     const levels = iconModelState.meta?.pressure_levels_hpa || [];
-    if (!select) return;
-    select.replaceChildren();
+    if (select) select.replaceChildren();
+    if (buttons) buttons.replaceChildren();
     for (const level of levels) {
-      const option = document.createElement("option");
-      option.value = String(level);
-      option.textContent = `${level} hPa`;
-      select.append(option);
+      if (select) {
+        const option = document.createElement("option");
+        option.value = String(level);
+        option.textContent = `${level} hPa`;
+        select.append(option);
+      }
+      if (buttons) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.pressureLevel = String(level);
+        button.textContent = `${level} hPa`;
+        button.setAttribute("aria-pressed", "false");
+        button.addEventListener("click", () => switchPressureLevel(level));
+        buttons.append(button);
+      }
     }
     const fallback = iconModelState.meta?.default_pressure_level_hpa ?? levels[0] ?? null;
     if (iconModelState.selectedPressureLevel == null || !levels.includes(Number(iconModelState.selectedPressureLevel))) {
       iconModelState.selectedPressureLevel = fallback;
     }
-    if (iconModelState.selectedPressureLevel != null) select.value = String(iconModelState.selectedPressureLevel);
+    if (select && iconModelState.selectedPressureLevel != null) select.value = String(iconModelState.selectedPressureLevel);
+    updatePressureButtons();
   }
 
   async function switchPressureLevel(level) {
@@ -505,6 +596,9 @@
       }
     }
     iconModelState.selectedPressureLevel = next;
+    const select = iconEl("iconPressureLevel");
+    if (select) select.value = String(next);
+    updatePressureButtons();
     iconModelState.rows.clear();
     const layerPanel = document.querySelector(".icon-layer-panel");
     const layerScrollTop = layerPanel?.scrollTop ?? 0;
@@ -515,6 +609,7 @@
       const row = iconModelState.rows.get(def.id);
       if (row?.querySelector('input[type="checkbox"]')?.checked) await setLayerEnabled(def, true);
     }
+    updateActiveLayersSummary();
     setMapStatus(`Pressure level ${next} hPa ready`, "ok");
   }
 
@@ -700,6 +795,7 @@
         return Boolean(row?.querySelector('input[type="checkbox"]')?.checked);
       });
       await Promise.all(enabledLayers.map((def) => setLayerEnabled(def, true)));
+      updateActiveLayersSummary();
       setMapStatus("Interactive fields ready", "ok");
     } catch (error) {
       console.error("icon_time_switch_failed", error);
@@ -912,6 +1008,7 @@
         const map = makeMap();
         const defaults = rootMeta.interactive.layers.filter((def) => def.default);
         await Promise.all(defaults.map((def) => setLayerEnabled(def, true)));
+        updateActiveLayersSummary();
 
         iconEl("iconMapReset").addEventListener("click", () => {
           map.fitBounds(iconModelState.meta.bounds, { padding: [8, 8] });
