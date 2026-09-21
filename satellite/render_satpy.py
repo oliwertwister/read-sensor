@@ -32,6 +32,17 @@ READER = "fci_l1c_nc"
 RESOLUTION_DEGREES = 0.05
 NATIVE_LAG_MINUTES = 75
 LOOKBACK_MINUTES = 180
+# EUMDAC 3.1.1 consumes the search iterator while expanding
+# --download-coverage, leaving the subsequent download order empty. These are
+# the same Q4 entry patterns used internally by EUMDAC, passed directly so the
+# product iterator reaches DownloadApp intact.
+Q4_ENTRY_PATTERNS = [
+    "*_????_0029.nc",
+    "*_????_003[0-9].nc",
+    "*_????_0040.nc",
+    "*_????_0041.nc",
+]
+Q4_EXPECTED_ENTRIES = 13
 
 
 def utc_iso(value) -> str | None:
@@ -65,8 +76,7 @@ def download_q4(input_dir: Path, start: datetime, end: datetime) -> None:
         "--limit", "1",
         "--sort", "sensing",
         "--desc",
-        "--download-coverage", "Q4",
-        "--entry", "*.nc",
+        "--entry", *Q4_ENTRY_PATTERNS,
         "--onedir",
         "--no-progress-bars",
         "-o", str(input_dir),
@@ -231,9 +241,15 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="read-sensor-fci-") as tmp:
         input_dir = Path(tmp)
         download_q4(input_dir, start, end)
-        nc_files = list(input_dir.rglob("*.nc"))
+        nc_files = sorted(input_dir.rglob("*.nc"))
         if not nc_files:
             raise RuntimeError("EUMDAC completed but no FCI NetCDF chunks were downloaded")
+        print(f"Downloaded {len(nc_files)} native FCI NetCDF chunks")
+        if len(nc_files) < Q4_EXPECTED_ENTRIES:
+            raise RuntimeError(
+                f"Incomplete native FCI Q4 download: {len(nc_files)} of "
+                f"{Q4_EXPECTED_ENTRIES} expected NetCDF chunks"
+            )
         metadata = render(input_dir, Path(args.output))
     print(json.dumps(metadata, indent=2, sort_keys=True))
     return 0
