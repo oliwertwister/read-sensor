@@ -7,6 +7,15 @@ A zero-cost, public prototype for sensor telemetry, weather observations, numeri
 
 The project deliberately separates a static public frontend from data collection and scheduled processing. GitHub Pages serves the dashboard; a Cloudflare Worker provides the telemetry/weather proxy API and scheduled workflow dispatch; Cloudflare D1 stores bounded sensor history; GitHub Actions performs scheduled static-data/image builds. The sensor computer only makes outbound HTTPS requests.
 
+## Start here
+
+- **Run / reproduce / credentials:** [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+- **Satellite implementation:** [`satellite/README.md`](satellite/README.md)
+- **ICON-EU implementation:** [`model/README.md`](model/README.md)
+- **Production workflow:** [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+
+The canonical full build is the GitHub Actions workflow. It is the only production path that can obtain the short-lived GitHub OIDC identity used for R2 model-cube uploads. Local instructions are intentionally limited to validation and rendering rather than emulating production credentials.
+
 ## Current dashboard
 
 - **Overview** — current sensor value, age, and Berlin weather.
@@ -15,7 +24,7 @@ The project deliberately separates a static public frontend from data collection
 - **Aviation Weather** — worldwide station search, map selection, and METAR/TAF retrieval through the Aviation Weather Center Data API.
 - **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields include T2M, MetPy-derived 2 m dew point, PMSL, RH2M, total cloud cover, accumulated precipitation and 10 m wind, plus temperature, geopotential height, relative humidity, wind, potential temperature plus relative vorticity and horizontal divergence at 850/700/500 hPa; the latter two are colour/query products without dense isolines.
 - **SYNOP** — worldwide WMO station search plus a recent-report map assembled from DWD SYNOP feeds; selected raw `AAXX` reports are decoded in the browser when available.
-- **Satellite** — resilient EUMETView WMS imagery remains the baseline; an optional credential-gated EUMDAC + Satpy path can replace it with native MTG/FCI Level-1c products and a queryable IR brightness-temperature grid.
+- **Satellite** — EUMETView WMS supplies the resilient 24-hour Geo Colour baseline. The credential-gated EUMDAC + Satpy stage adds native MTG/FCI Level-1c products, a queryable IR 10.5 µm brightness-temperature grid, and several derived RGB composites; daylight-only RGBs are explicitly masked outside valid solar illumination.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid and local geometry loading.
 
 ## Telemetry architecture
@@ -36,9 +45,9 @@ Vendored parser notices are listed in [`vendor/THIRD_PARTY_NOTICES.md`](vendor/T
 
 The satellite build now has two layers of resilience. The always-on satellite/render_satellite.py path requests rendered MTG/FCI imagery from EUMETSAT EUMETView WMS and publishes the existing WebP products. A second, optional satellite/render_satpy.py stage activates only when EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET are available as GitHub Actions secrets.
 
-The native stage downloads a bounded MTG/FCI Level-1c subset through EUMDAC, reads it with Satpy's fci_l1c_nc reader, resamples natural colour and IR 10.5 µm onto the Europe target grid, and publishes a queryable IR brightness-temperature Float32 grid. It replaces the compatible satellite outputs only after successful native processing. Authentication, entitlement, download or Satpy failures therefore leave the WMS products intact and do not block Pages deployment.
+The native stage downloads a bounded MTG/FCI Level-1c subset through EUMDAC, reads it with Satpy's `fci_l1c_nc` reader, resamples to the Europe target grid, and publishes calibrated IR 10.5 µm plus derived Satpy RGB products. The WMS Geo Colour product remains the 24-hour display fallback whenever native Satpy GeoColor is unavailable; native failures are isolated and do not block the other composites or the Pages deployment.
 
-The distinction remains important: WMS products are display pixels; only the native Satpy path provides calibrated FCI arrays suitable for quantitative satellite work.
+The distinction remains important: WMS products are display pixels; the native Satpy path provides calibrated FCI arrays suitable for quantitative work. Daylight-only products are labelled/masked rather than shown as black nighttime rectangles.
 
 ## Numerical model analysis path
 
@@ -131,19 +140,4 @@ The dashboard combines several independent upstream services. Availability, late
 
 Rendered visual products and original numerical data are not interchangeable from a licensing perspective. In particular, EUMETSAT licensing depends on product and use case. Native FCI Level-1c ingestion is credential-gated and must be used only under the applicable Data Store/NRT licence and redistribution conditions. The pipeline should publish derived visual products rather than republishing original licensed numerical files unless the applicable licence explicitly permits redistribution.
 
-## Cost and retention safety policy
-
-The deployment is intentionally configured below provider free-tier/soft limits. These are project guardrails, not just documentation:
-
-| Resource | Provider limit relevant here | Project ceiling / retention | Enforcement |
-| --- | --- | --- | --- |
-| GitHub Pages | 1 GB published site; 100 GB/month soft bandwidth | 500 MiB staged-site ceiling; no Zarr cube on Pages | Actions build fails before deploy if `_site` exceeds 500 MiB or contains `model/cube.zarr` |
-| GitHub Actions | Public repositories on standard hosted runners are free | Standard Ubuntu runners only; no long-lived model artifacts | Workflow design; model data is staged/deployed, not retained as Actions artifacts |
-| Cloudflare Workers Free | 100,000 requests/day | No paid Worker upgrade assumed | Provider hard free-plan request limit; excess requests fail rather than becoming metered Workers usage |
-| Cloudflare D1 Free | 500 MB/database, 5 GB/account | Telemetry rows: **30 days maximum** | Worker clamps `RETENTION_DAYS` to 30, rejects older ingests, prunes on ingest and every cron run |
-| Cloudflare R2 Standard | 10 GB-month storage, 1M Class A and 10M Class B operations/month included | **7 GiB project storage ceiling**, 120 MiB/run, 2000 objects/run, 2 MiB/object, standard 00/06/12/18 UTC runs only | Worker upload preflight + uploader validation + Worker object/path guards |
-| R2 model history | User-defined | **14 days maximum** for immutable `icon-eu/runs/` | Bucket lifecycle rule `expire-model-cubes-14d`; `latest.json` is outside the expiring prefix |
-
-The R2 worst-case accepted write rate is bounded by four standard ICON runs/day. At the 120 MiB per-run ceiling and 14-day lifecycle, retained model storage is at most about 6.6 GiB before the independent 7 GiB preflight ceiling stops new uploads. Re-publishing an already-current model run is skipped, so the 15-minute refresh job does not repeatedly rewrite the same cube.
-
-Animation is generated in the browser from existing forecast-time layers. No PNG/GIF/video frame sequence is stored server-side. The next frame is prefetched into the browser cache, while the time scrubber, loop control and speed selector reuse the same immutable map assets.
+Operational setup, credentials, verification and reproduction commands are maintained in [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Storage ceilings are defined once above and enforced in code/workflow rather than repeated in multiple documentation sections.
