@@ -1463,19 +1463,118 @@ a { color: #58a6ff; }
   white-space:nowrap;
 }
 .icon-anim-loop input { margin:0; accent-color:#58a6ff; }
-.model-layer-group { margin-top:14px; }
-.model-layer-group h4 {
-  margin:0 0 8px;
+.model-layer-panel-heading {
+  position:sticky;
+  z-index:4;
+  top:-12px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:-12px -12px 8px;
+  padding:12px;
+  border-bottom:1px solid #30363d;
+  background:#161b22;
+}
+.model-layer-panel-heading > div {
+  display:grid;
+  gap:2px;
+  min-width:0;
+}
+.model-layer-panel-heading strong {
+  color:#e6edf3;
+  font-size:.88rem;
+}
+.model-layer-panel-heading small {
+  overflow:hidden;
   color:#8b949e;
+  font-size:.63rem;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.model-layer-active-count {
+  flex:0 0 auto;
+  padding:3px 7px;
+  border:1px solid #30363d;
+  border-radius:999px;
+  color:#8b949e;
+  background:#0d1117;
+  font-size:.65rem;
+  font-variant-numeric:tabular-nums;
+}
+.model-layer-group {
+  margin-top:7px;
+  overflow:hidden;
+  border:1px solid #30363d;
+  border-radius:9px;
+  background:#0d1117;
+}
+.model-layer-group > summary,
+.model-field-group > summary {
+  display:grid;
+  grid-template-columns:12px minmax(0,1fr) auto;
+  align-items:center;
+  gap:7px;
+  cursor:pointer;
+  list-style:none;
+  user-select:none;
+}
+.model-layer-group > summary::-webkit-details-marker,
+.model-field-group > summary::-webkit-details-marker { display:none; }
+.model-layer-group > summary::before,
+.model-field-group > summary::before {
+  content:"›";
+  color:#8b949e;
+  font-size:1rem;
+  line-height:1;
+  transform-origin:center;
+  transition:transform .12s ease;
+}
+.model-layer-group[open] > summary::before,
+.model-field-group[open] > summary::before { transform:rotate(90deg); }
+.model-layer-group > summary {
+  min-height:38px;
+  padding:0 10px;
+  color:#c9d1d9;
+  font-size:.75rem;
+  font-weight:700;
+  letter-spacing:.025em;
+}
+.model-layer-group[open] > summary { border-bottom:1px solid rgba(48,54,61,.75); }
+.model-layer-group > summary small,
+.model-field-group > summary small {
+  overflow:hidden;
+  color:#8b949e;
+  font-size:.62rem;
+  font-weight:500;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.model-field-group {
+  margin:6px 7px;
+  overflow:hidden;
+  border:1px solid rgba(48,54,61,.75);
+  border-radius:7px;
+  background:#161b22;
+}
+.model-field-group > summary {
+  min-height:34px;
+  padding:0 8px;
+  color:#c9d1d9;
   font-size:.72rem;
-  letter-spacing:.06em;
-  text-transform:uppercase;
 }
+.model-field-group[open] > summary { border-bottom:1px solid rgba(48,54,61,.65); }
+.model-field-options { padding:1px 9px 6px; }
 .model-layer-row {
-  padding:8px 0 9px;
-  border-top:1px solid rgba(48,54,61,.7);
+  padding:7px 0 8px;
+  border-top:1px solid rgba(48,54,61,.6);
 }
-.model-layer-group h4 + .model-layer-row { border-top:0; }
+.model-field-options > .model-layer-row:first-child,
+.model-layer-group > summary + .model-layer-row { border-top:0; }
+.model-layer-group > .model-layer-row {
+  margin-right:10px;
+  margin-left:10px;
+}
 .model-layer-row-top {
   display:flex;
   align-items:center;
@@ -1488,23 +1587,24 @@ a { color: #58a6ff; }
   gap:7px;
   min-width:0;
   color:#c9d1d9;
-  font-size:.78rem;
+  font-size:.73rem;
   cursor:pointer;
 }
 .model-layer-toggle input { margin:0; accent-color:#58a6ff; }
-.model-layer-toggle span {
+.model-layer-togggle span {
   overflow:hidden;
   text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .model-layer-opacity {
   width:100%;
-  height:18px;
-  margin-top:4px;
+  height:16px;
+  margin-top:3px;
   accent-color:#58a6ff;
 }
 .model-layer-opacity-value {
   color:#8b949e;
-  font-size:.68rem;
+  font-size:.65rem;
   font-variant-numeric:tabular-nums;
 }
 .model-layer-legend {
@@ -1512,15 +1612,15 @@ a { color: #58a6ff; }
   grid-template-columns:auto 1fr auto;
   align-items:center;
   gap:6px;
-  margin-top:2px;
+  margin-top:1px;
 }
 .model-layer-legend small {
   color:#8b949e;
-  font-size:.62rem;
+  font-size:.59rem;
   white-space:nowrap;
 }
 .model-layer-gradient {
-  height:6px;
+  height:5px;
   border-radius:999px;
   border:1px solid rgba(255,255,255,.18);
 }

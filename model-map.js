@@ -11,6 +11,8 @@
     currentStepIndex: 0,
     selectedPressureLevel: null,
     layerPreferences: new Map(),
+    layerGroupOpen: new Map(),
+    layerFieldOpen: new Map(),
     switchSerial: 0,
     animationPlaying: false,
     animationTimer: null,
@@ -246,6 +248,75 @@
     return legend;
   }
 
+  function layerEnabled(def) {
+    const preference = iconModelState.layerPreferences.get(def.id);
+    return preference?.enabled ?? Boolean(def.default);
+  }
+
+  function updateLayerPanelSummary() {
+    const badge = iconEl("iconLayerActiveCount");
+    if (!badge || !iconModelState.meta) return;
+    const visibleDefs = iconModelState.meta.layers.filter((def) => (
+      def.pressure_level_hpa == null
+      || Number(def.pressure_level_hpa) === Number(iconModelState.selectedPressureLevel)
+    ));
+    const active = visibleDefs.filter((def) => layerEnabled(def)).length;
+    badge.textContent = `${active} active`;
+
+    for (const group of document.querySelectorAll(".model-layer-group")) {
+      const key = group.dataset.layerGroup;
+      const defs = visibleDefs.filter((def) => layerSection(def).key === key);
+      const enabled = defs.filter((def) => layerEnabled(def)).length;
+      const count = group.querySelector(":scope > summary small");
+      if (count) count.textContent = enabled ? `${enabled} on` : `${defs.length} layers`;
+    }
+
+    for (const fieldGroup of document.querySelectorAll(".model-field-group")) {
+      const [sectionKey, ...fieldParts] = fieldGroup.dataset.fieldGroup.split(":");
+      const fieldKey = fieldParts.join(":");
+      const defs = visibleDefs.filter((def) => (
+        layerSection(def).key === sectionKey && layerFieldKey(def) === fieldKey
+      ));
+      const enabledKinds = defs.filter((def) => layerEnabled(def)).map(layerKindLabel);
+      const state = fieldGroup.querySelector(":scope > summary small");
+      if (state) state.textContent = enabledKinds.length ? enabledKinds.join(" + ") : "Off";
+    }
+  }
+
+  function layerKindLabel(def) {
+    if (def.kind === "raster") return "Colour";
+    if (def.kind === "contours") return "Lines";
+    if (def.kind === "vectors") return "Vectors";
+    if (def.kind === "satellite") return "Image";
+    return def.kind;
+  }
+
+  function layerSection(def) {
+    if (def.group === "Satellite") {
+      return { key: "satellite", label: "Satellite", order: 0 };
+    }
+    if (def.pressure_level_hpa == null) {
+      return { key: "surface", label: "Surface fields", order: 1 };
+    }
+    const diagnostic = ["theta", "vorticity", "divergence"].includes(def.pressure_variable);
+    return diagnostic
+      ? { key: "diagnostics", label: `Diagnostics · ${def.pressure_level_hpa} hPa`, order: 3 }
+      : { key: "upper-air", label: `Upper air · ${def.pressure_level_hpa} hPa`, order: 2 };
+  }
+
+  function layerFieldKey(def) {
+    return def.field || `layer:${def.id}`;
+  }
+
+  function layerFieldLabel(def) {
+    const field = def.field ? iconModelState.meta.fields[def.field] : null;
+    if (field?.label) {
+      const prefix = def.pressure_level_hpa != null ? `${def.pressure_level_hpa} hPa ` : "";
+      return field.label.startsWith(prefix) ? field.label.slice(prefix.length) : field.label;
+    }
+    return def.label;
+  }
+
   function buildLayerRow(def) {
     const row = document.createElement("div");
     row.className = "model-layer-row";
@@ -260,7 +331,7 @@
     const preference = iconModelState.layerPreferences.get(def.id);
     checkbox.checked = preference?.enabled ?? Boolean(def.default);
     const name = document.createElement("span");
-    name.textContent = def.label;
+    name.textContent = def.kind === "satellite" ? def.label : layerKindLabel(def);
     label.append(checkbox, name);
 
     const opacityText = document.createElement("output");
@@ -280,6 +351,7 @@
     checkbox.addEventListener("change", () => {
       const current = iconModelState.layerPreferences.get(def.id) || {};
       iconModelState.layerPreferences.set(def.id, { ...current, enabled: checkbox.checked });
+      updateLayerPanelSummary();
       setLayerEnabled(def, checkbox.checked);
     });
     slider.addEventListener("input", () => {
@@ -302,23 +374,90 @@
   function buildLayerPanel() {
     const container = iconEl("iconLayerList");
     container.replaceChildren();
-    const groups = new Map();
+
+    const header = document.createElement("div");
+    header.className = "model-layer-panel-heading";
+    const headingText = document.createElement("div");
+    const heading = document.createElement("strong");
+    heading.textContent = "Layers";
+    const hint = document.createElement("small");
+    hint.textContent = "Expand a field for colour, lines or vectors";
+    headingText.append(heading, hint);
+    const active = document.createElement("span");
+    active.id = "iconLayerActiveCount";
+    active.className = "model-layer-active-count";
+    header.append(headingText, active);
+    container.append(header);
+
+    const sections = new Map();
     for (const def of iconModelState.meta.layers) {
       if (def.pressure_level_hpa != null && Number(def.pressure_level_hpa) !== Number(iconModelState.selectedPressureLevel)) continue;
-      if (!groups.has(def.group)) groups.set(def.group, []);
-      groups.get(def.group).push(def);
+      const info = layerSection(def);
+      if (!sections.has(info.key)) sections.set(info.key, { ...info, defs: [] });
+      sections.get(info.key).defs.push(def);
     }
 
-    for (const [groupName, defs] of groups) {
-      const group = document.createElement("section");
-      group.className = "model-layer-group";
-      const title = document.createElement("h4");
-      title.textContent = groupName;
-      group.append(title);
-      for (const def of defs) group.append(buildLayerRow(def));
-      container.append(group);
+    const orderedSections = [...sections.values()].sort((a, b) => a.order - b.order);
+    for (const section of orderedSections) {
+      const details = document.createElement("details");
+      details.className = "model-layer-group";
+      details.dataset.layerGroup = section.key;
+      const storedOpen = iconModelState.layerGroupOpen.get(section.key);
+      details.open = storedOpen ?? (section.key === "satellite" || section.key === "surface");
+      details.addEventListener("toggle", () => {
+        iconModelState.layerGroupOpen.set(section.key, details.open);
+      });
+
+      const summary = document.createElement("summary");
+      const title = document.createElement("span");
+      title.textContent = section.label;
+      const sectionActive = section.defs.filter((def) => layerEnabled(def)).length;
+      const count = document.createElement("small");
+      count.textContent = sectionActive ? `${sectionActive} on` : `${section.defs.length} layers`;
+      summary.append(title, count);
+      details.append(summary);
+
+      if (section.key === "satellite") {
+        for (const def of section.defs) details.append(buildLayerRow(def));
+      } else {
+        const fields = new Map();
+        for (const def of section.defs) {
+          const key = layerFieldKey(def);
+          if (!fields.has(key)) fields.set(key, []);
+          fields.get(key).push(def);
+        }
+
+        for (const [fieldKey, defs] of fields) {
+          const fieldDetails = document.createElement("details");
+          fieldDetails.className = "model-field-group";
+          fieldDetails.dataset.fieldGroup = `${section.key}:${fieldKey}`;
+          const storedFieldOpen = iconModelState.layerFieldOpen.get(fieldDetails.dataset.fieldGroup);
+          fieldDetails.open = storedFieldOpen ?? defs.some((def) => layerEnabled(def));
+          fieldDetails.addEventListener("toggle", () => {
+            iconModelState.layerFieldOpen.set(fieldDetails.dataset.fieldGroup, fieldDetails.open);
+          });
+
+          const fieldSummary = document.createElement("summary");
+          const fieldName = document.createElement("span");
+          fieldName.textContent = layerFieldLabel(defs[0]);
+          const enabledKinds = defs.filter((def) => layerEnabled(def)).map(layerKindLabel);
+          const fieldState = document.createElement("small");
+          fieldState.textContent = enabledKinds.length ? enabledKinds.join(" + ") : "Off";
+          fieldSummary.append(fieldName, fieldState);
+          fieldDetails.append(fieldSummary);
+
+          const options = document.createElement("div");
+          options.className = "model-field-options";
+          for (const def of defs) options.append(buildLayerRow(def));
+          fieldDetails.append(options);
+          details.append(fieldDetails);
+        }
+      }
+      container.append(details);
     }
+    updateLayerPanelSummary();
   }
+
   function populatePressureControl() {
     const select = iconEl("iconPressureLevel");
     const levels = iconModelState.meta?.pressure_levels_hpa || [];
