@@ -8,7 +8,7 @@
       content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://unpkg.com https://tile.openstreetmap.org https://opendata.dwd.de; connect-src 'self' https://api.open-meteo.com https://read-sensor-api.read-sensor.workers.dev; upgrade-insecure-requests"
     >
     <title>read-sensor</title>
-    <link rel="stylesheet" href="style.css?v=layer-info-1">
+    <link rel="stylesheet" href="style.css?v=diagnostics-monitor-1">
   </head>
   <body>
     <header>
@@ -26,6 +26,7 @@
       <button type="button" data-tab="models">DWD ICON-EU</button>
       <button type="button" data-tab="synop">SYNOP</button>
       <button type="button" data-tab="satellite">Satellite</button>
+      <button type="button" data-tab="data-monitor">Data Monitor</button>
       <button type="button" data-tab="map">Berlin Map</button>
     </nav>
 
@@ -237,7 +238,7 @@
           <div id="satelliteFreshness" class="satellite-freshness">Waiting for cloud render…</div>
         </div>
         <div class="satellite-toolbar">
-          <div class="satellite-products" role="group" aria-label="Satellite product">
+          <div id="satelliteProductButtons" class="satellite-products" role="group" aria-label="Satellite product">
             <button type="button" data-sat-product="geocolour" class="active">Geo Colour</button>
             <button type="button" data-sat-product="ir105">IR 10.5 µm</button>
           </div>
@@ -254,14 +255,79 @@
         </figure>
         <section class="satellite-about" aria-label="About this satellite image">
           <h3>About this image</h3>
-          <p>This is a Meteosat Third Generation FCI product supplied by EUMETSAT EUMETView. The coordinate grid and Natural Earth Admin-0 country boundaries are fitted to the same requested WGS84 / CRS:84 extent as the satellite image; they are not inferred from image pixels.</p>
+          <p id="satAboutText">Meteosat Third Generation FCI imagery. The coordinate grid and Natural Earth Admin-0 country boundaries are fitted to the same requested WGS84 / CRS:84 extent as the satellite image; they are not inferred from image pixels.</p>
           <div class="satellite-about-grid">
-            <div><small>Source</small><strong>EUMETSAT EUMETView</strong></div>
+            <div><small>Source</small><strong id="satSource">—</strong></div>
             <div><small>Projection</small><strong>WGS84 / CRS:84</strong></div>
             <div><small>Coverage</small><strong>25°W–45°E · 30°N–72°N</strong></div>
             <div><small>Processing</small><strong id="satProcessing">Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent</strong></div>
           </div>
         </section>
+      </section>
+
+      <section id="data-monitor" class="tab">
+        <div class="monitor-heading">
+          <div>
+            <h2>Data Monitor</h2>
+            <p id="monitorGenerated" class="muted">Per-deployment transfer, processing and storage telemetry</p>
+          </div>
+          <div class="monitor-heading-actions">
+            <span id="monitorStatus" class="status">Open this tab to load metrics</span>
+            <button id="monitorRefresh" type="button">Refresh</button>
+          </div>
+        </div>
+
+        <div class="monitor-summary-cards">
+          <article><small>Pages artifact</small><strong id="monitorPages">—</strong><span id="monitorFiles">—</span></article>
+          <article><small>Upstream downloads</small><strong id="monitorDownloads">—</strong><span>instrumented sources</span></article>
+          <article><small>Pipeline wall time</small><strong id="monitorRuntime">—</strong><span id="monitorRuntimeDetail">heavy-step total —</span></article>
+          <article><small>Peak step RAM</small><strong id="monitorPeakRam">—</strong><span id="monitorRunner">—</span></article>
+          <article><small>Local Zarr cube</small><strong id="monitorCube">—</strong><span>before R2 upload</span></article>
+          <article><small>Products</small><strong id="monitorProducts">—</strong><span id="monitorWarnings">—</span></article>
+        </div>
+
+        <section class="monitor-panel">
+          <div class="monitor-panel-heading">
+            <div><h3>Capacity &amp; guardrails</h3><p class="muted">Current deployment versus the limits we enforce.</p></div>
+            <span id="monitorDeployId" class="muted">—</span>
+          </div>
+          <div class="monitor-meters">
+            <div id="monitorPagesHard" class="monitor-meter"><div><strong>GitHub Pages hard ceiling</strong><span class="monitor-meter-label">—</span></div><div class="monitor-meter-track"><span class="monitor-meter-fill"></span></div></div>
+            <div id="monitorPagesSoft" class="monitor-meter"><div><strong>Pages planning target</strong><span class="monitor-meter-label">—</span></div><div class="monitor-meter-track"><span class="monitor-meter-fill"></span></div></div>
+            <div id="monitorR2Run" class="monitor-meter"><div><strong>R2 model cube per run</strong><span class="monitor-meter-label">—</span></div><div class="monitor-meter-track"><span class="monitor-meter-fill"></span></div></div>
+            <div id="monitorR2Objects" class="monitor-meter"><div><strong>R2 objects per model run</strong><span class="monitor-meter-label">—</span></div><div class="monitor-meter-track"><span class="monitor-meter-fill"></span></div></div>
+          </div>
+          <p class="monitor-limit-note">Single R2 object limit: <strong id="monitorObjectLimit">—</strong>.</p>
+        </section>
+
+        <div class="monitor-grid">
+          <section class="monitor-panel">
+            <h3>Downloads by source</h3>
+            <div class="monitor-table-wrap"><table><thead><tr><th>Source</th><th>Downloaded</th><th>Requests</th><th>Transfer time</th></tr></thead><tbody id="monitorDownloadsBody"></tbody></table></div>
+          </section>
+          <section class="monitor-panel">
+            <h3>Processing resources</h3>
+            <div class="monitor-table-wrap"><table><thead><tr><th>Step</th><th>Wall time</th><th>Peak RAM</th><th>CPU time</th><th>Status</th></tr></thead><tbody id="monitorProcessingBody"></tbody></table></div>
+          </section>
+          <section class="monitor-panel">
+            <h3>Pages storage by asset type</h3>
+            <div class="monitor-table-wrap"><table><thead><tr><th>Asset type</th><th>Size</th><th>Files</th></tr></thead><tbody id="monitorStorageBody"></tbody></table></div>
+          </section>
+          <section class="monitor-panel">
+            <h3>Pages storage by area</h3>
+            <div class="monitor-table-wrap"><table><thead><tr><th>Area</th><th>Size</th><th>Files</th></tr></thead><tbody id="monitorAreaBody"></tbody></table></div>
+          </section>
+        </div>
+
+        <section class="monitor-panel">
+          <h3>Largest staged files</h3>
+          <div class="monitor-table-wrap"><table><thead><tr><th>File</th><th>Size</th></tr></thead><tbody id="monitorLargestBody"></tbody></table></div>
+        </section>
+
+        <details class="monitor-notes">
+          <summary>Measurement notes</summary>
+          <ul id="monitorNotes"></ul>
+        </details>
       </section>
 
       <section id="map" class="tab">
@@ -416,9 +482,10 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script src="geometry-loader.js?v=geometry-5"></script>
     <script src="geometry-ui.js?v=geometry-4"></script>
-    <script src="app.js?v=icon-rethink-1"></script>
+    <script src="app.js?v=diagnostics-monitor-1"></script>
     <script src="cube-storage.js?v=zarr-r2-prototype-1"></script>
-    <script src="model-map.js?v=layer-info-1"></script>
+    <script src="model-map.js?v=expanded-diagnostics-1"></script>
+    <script src="data-monitor.js?v=monitor-1"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
 </html>

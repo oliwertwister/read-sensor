@@ -28,9 +28,18 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      READ_SENSOR_TRANSFER_LOG: monitor/raw/transfers.jsonl
+      MONITOR_STEP_DIR: monitor/raw/steps
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+
+      - name: Initialize deployment monitor
+        run: |
+          mkdir -p monitor/raw/steps
+          date +%s > monitor/raw/workflow-start.txt
 
       - name: Verify R2 upload identity
         env:
@@ -60,6 +69,7 @@ jobs:
         run: |
           node --check app.js
           node --check model-map.js
+          node --check data-monitor.js
           node --check config.js
           node --check geometry-loader.js
           node --check geometry-ui.js
@@ -81,7 +91,7 @@ jobs:
             python synop/test_update_synop.py
             python synop/test_update_live.py
           fi
-          python synop/update_live.py --catalog synop/stations.json --output synop/output/live.json
+          python monitor/run_with_metrics.py --name "SYNOP refresh" -- python synop/update_live.py --catalog synop/stations.json --output synop/output/live.json
 
       - name: Install geospatial render dependencies
         run: |
@@ -104,10 +114,10 @@ jobs:
           done
 
       - name: Test Meteosat fallback handling
-        run: PYTHONPATH=satellite python satellite/test_render_satellite.py
+        run: PYTHONPATH=.:satellite python satellite/test_render_satellite.py
 
       - name: Render latest Meteosat products
-        run: python satellite/render_satellite.py --output satellite/output
+        run: python monitor/run_with_metrics.py --name "EUMETView WMS baseline" -- python satellite/render_satellite.py --output satellite/output
 
       - name: Upgrade Meteosat products with native FCI via Satpy when credentials are available
         env:
@@ -122,12 +132,12 @@ jobs:
             echo "::warning::Satpy dependency installation failed; keeping the WMS satellite products."
             exit 0
           fi
-          if ! PYTHONPATH=satellite python satellite/render_satpy.py --output satellite/output; then
+          if ! PYTHONPATH=.:satellite python monitor/run_with_metrics.py --name "Native FCI / Satpy" -- python satellite/render_satpy.py --output satellite/output; then
             echo "::warning::Native FCI/Satpy refresh failed; keeping the WMS satellite products."
           fi
 
       - name: Render quantitative ICON-EU static and interactive products
-        run: python model/render_icon_products.py --output model/output --background satellite/output/geocolour.webp
+        run: python monitor/run_with_metrics.py --name "ICON-EU / MetPy render" -- python model/render_icon_products.py --output model/output --background satellite/output/geocolour.webp
 
       - name: Publish Zarr cube to R2 with GitHub OIDC
         env:
@@ -138,12 +148,12 @@ jobs:
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=read-sensor-r2-upload")
           MODEL_UPLOAD_TOKEN=$(python -c 'import json,sys; print(json.load(sys.stdin)["value"])' <<< "$OIDC_JSON")
           export MODEL_UPLOAD_TOKEN
-          python model/upload_zarr_cube.py
+          python monitor/run_with_metrics.py --name "R2 Zarr publish" -- python model/upload_zarr_cube.py
 
       - name: Stage public files
         run: |
           mkdir _site
-          cp index.html app.js model-map.js cube-storage.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
+          cp index.html app.js model-map.js data-monitor.js cube-storage.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
           cp -R vendor _site/
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/
@@ -153,12 +163,20 @@ jobs:
           mkdir -p _site/synop
           cp synop/stations.json _site/synop/latest.json
           cp synop/output/live.json _site/synop/live.json
+
+      - name: Build deployment data monitor
+        run: python monitor/build_monitor.py --site _site --cube model/output/cube.zarr --output _site/monitor/latest.json
+
       - name: Guard free-tier storage limits
         run: |
           test ! -d _site/model/cube.zarr || { echo "Refusing to publish Zarr cube to GitHub Pages"; exit 1; }
           SITE_KIB=$(du -sk _site | awk '{print $1}')
+          SOFT_SITE_KIB=$((380 * 1024))
           MAX_SITE_KIB=$((500 * 1024))
-          echo "Staged Pages size: $((SITE_KIB / 1024)) MiB / 500 MiB project safety ceiling"
+          echo "Staged Pages size: $((SITE_KIB / 1024)) MiB / 380 MiB planning target / 500 MiB project safety ceiling"
+          if [ "$SITE_KIB" -gt "$SOFT_SITE_KIB" ]; then
+            echo "::warning::Staged site exceeds the 380 MiB planning target; review Data Monitor before adding more persistent layers."
+          fi
           if [ "$SITE_KIB" -gt "$MAX_SITE_KIB" ]; then
             echo "Refusing deployment: staged site exceeds 500 MiB safety ceiling"
             exit 1

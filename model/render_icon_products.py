@@ -77,12 +77,12 @@ DISPLAY_SPECS = {
     },
     "cloud": {
         "label": "Total cloud cover", "unit": "%", "cmap": "Greys",
-        "vmin": 0.0, "vmax": 100.0, "contours": [20, 40, 60, 80, 100],
+        "vmin": 0.0, "vmax": 100.0, "contours": [],
         "line_color": "#555555", "decimals": 0,
     },
     "precip": {
         "label": "Accumulated precipitation", "unit": "mm", "cmap": "Blues",
-        "vmin": 0.0, "vmax": 30.0, "contours": [0.5, 1, 2, 5, 10, 20, 30, 50],
+        "vmin": 0.0, "vmax": 30.0, "contours": [],
         "line_color": "#1261a0", "decimals": 1,
     },
 
@@ -152,6 +152,37 @@ PRESSURE_PARAMETER_INFO = {
     "divergence": {
         "definition": "Horizontal divergence measures spreading or convergence of the wind field; positive values diverge and negative values converge.",
         "method": "Calculated from DWD pressure-level U/V wind with MetPy divergence(); grid spacing comes from MetPy lat_lon_grid_deltas().",
+    },
+}
+
+SPECIAL_DIAGNOSTIC_SPECS = {
+    "thetae_850": {
+        "label": "850 hPa equivalent potential temperature", "unit": "K", "cmap": "turbo",
+        "vmin": 275.0, "vmax": 355.0, "contours": [], "decimals": 1,
+        "pressure_level_hpa": 850, "pressure_variable": "thetae",
+        "definition": "Equivalent potential temperature combines temperature and moisture into the temperature an air parcel would reach after moist-adiabatic ascent and dry-adiabatic return to 1000 hPa.",
+        "method": "850 hPa dew point is derived from DWD temperature and relative humidity with MetPy dewpoint_from_relative_humidity(); θe is then calculated with MetPy equivalent_potential_temperature().",
+    },
+    "frontogenesis_850": {
+        "label": "850 hPa frontogenesis", "unit": "K/(100 km·3 h)", "cmap": "PuOr_r",
+        "vmin": -12.0, "vmax": 12.0, "contours": [], "decimals": 2,
+        "pressure_level_hpa": 850, "pressure_variable": "frontogenesis",
+        "definition": "Frontogenesis measures how rapidly a horizontal potential-temperature gradient is strengthening or weakening.",
+        "method": "Calculated from 850 hPa potential temperature and DWD U/V wind with MetPy frontogenesis(); converted to K per 100 km per 3 h.",
+    },
+    "absolute_vorticity_500": {
+        "label": "500 hPa absolute vorticity", "unit": "1e-5 s^-1", "cmap": "viridis",
+        "vmin": 0.0, "vmax": 30.0, "contours": [], "decimals": 1,
+        "pressure_level_hpa": 500, "pressure_variable": "absolute_vorticity",
+        "definition": "Absolute vorticity is the sum of the air flow's relative vorticity and planetary vorticity from Earth's rotation.",
+        "method": "Calculated from DWD 500 hPa U/V wind and latitude with MetPy absolute_vorticity(); grid spacing comes from MetPy lat_lon_grid_deltas().",
+    },
+    "shear_850_500": {
+        "label": "850–500 hPa wind shear", "unit": "m/s", "cmap": "plasma",
+        "vmin": 0.0, "vmax": 45.0, "contours": [], "decimals": 1,
+        "pressure_span_hpa": [850, 500], "diagnostic_group": "cross-level",
+        "definition": "850–500 hPa bulk wind shear is the magnitude of the vector wind difference between the 500 hPa and 850 hPa pressure surfaces.",
+        "method": "Calculated from direct DWD U/V wind components as NumPy hypot(U500−U850, V500−V850).",
     },
 }
 
@@ -374,6 +405,39 @@ def prepared_fields_from_grids(grids: dict) -> tuple[dict[str, np.ndarray], np.n
         )
         arrays[f"_u_{level}"] = pu
         arrays[f"_v_{level}"] = pv
+
+    t850_k = np.asarray(grids["t_850"].values, dtype=np.float32)
+    rh850 = np.asarray(grids["rh_850"].values, dtype=np.float32)
+    dewpoint850 = mpcalc.dewpoint_from_relative_humidity(
+        t850_k * units.kelvin, rh850 * units.percent,
+    ).to("kelvin")
+    arrays["thetae_850"] = np.asarray(
+        mpcalc.equivalent_potential_temperature(
+            850 * units.hPa, t850_k * units.kelvin, dewpoint850,
+        ).to("kelvin").magnitude,
+        dtype=np.float32,
+    )
+    fronto_si = mpcalc.frontogenesis(
+        arrays["theta_850"] * units.kelvin,
+        arrays["_u_850"] * units("m/s"),
+        arrays["_v_850"] * units("m/s"),
+        dx=dx, dy=dy,
+    ).to("kelvin / meter / second").magnitude
+    arrays["frontogenesis_850"] = np.asarray(fronto_si * (100_000.0 * 10_800.0), dtype=np.float32)
+    arrays["absolute_vorticity_500"] = np.asarray(
+        mpcalc.absolute_vorticity(
+            arrays["_u_500"] * units("m/s"),
+            arrays["_v_500"] * units("m/s"),
+            dx=dx, dy=dy,
+            latitude=lats[:, None] * units.degree,
+        ).to("1/s").magnitude * 1e5,
+        dtype=np.float32,
+    )
+    arrays["shear_850_500"] = np.hypot(
+        arrays["_u_500"] - arrays["_u_850"],
+        arrays["_v_500"] - arrays["_v_850"],
+    ).astype(np.float32)
+
     u = np.asarray(grids["u_10m"].values, dtype=np.float32)
     v = np.asarray(grids["v_10m"].values, dtype=np.float32)
     arrays["wind"] = np.hypot(u, v).astype(np.float32)
@@ -530,7 +594,6 @@ def interactive_metadata(
         contour_file = f"{field_id}-contours.geojson"
         grid_file = f"{field_id}.f32.gz"
         render_fill(array, spec, output_dir / fill_file)
-        contour_geojson(lons, lats, array, spec, output_dir / contour_file)
         write_grid(array, output_dir / grid_file)
 
         fields[field_id] = {
@@ -540,7 +603,6 @@ def interactive_metadata(
             **PARAMETER_INFO[field_id],
             "grid_file": f"{public_prefix}/{grid_file}",
             "fill_file": f"{public_prefix}/{fill_file}",
-            "contour_file": f"{public_prefix}/{contour_file}",
             "range": [spec["vmin"], spec["vmax"]],
             "color_stops": color_stops(spec),
             "shape": [int(array.shape[0]), int(array.shape[1])],
@@ -548,21 +610,22 @@ def interactive_metadata(
             "lon_start": float(lons[0]), "lon_step": float(np.median(np.diff(lons))),
         }
         enabled = defaults.get(field_id, {})
-        layers.extend([
-            {
-                "id": f"{field_id}_fill", "field": field_id, "kind": "raster",
-                "label": f"{spec['label']} · colour", "group": "ICON-EU fields",
-                "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
-                "default": bool(enabled.get("fill")), "opacity": 0.55,
-                "display_resampling": "bilinear_2x",
-            },
-            {
+        layers.append({
+            "id": f"{field_id}_fill", "field": field_id, "kind": "raster",
+            "label": f"{spec['label']} · colour", "group": "ICON-EU fields",
+            "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
+            "default": bool(enabled.get("fill")), "opacity": 0.55,
+            "display_resampling": "bilinear_2x",
+        })
+        if spec["contours"]:
+            contour_geojson(lons, lats, array, spec, output_dir / contour_file)
+            fields[field_id]["contour_file"] = f"{public_prefix}/{contour_file}"
+            layers.append({
                 "id": f"{field_id}_contours", "field": field_id, "kind": "contours",
                 "label": f"{spec['label']} · isolines", "group": "ICON-EU fields",
                 "file": f"{public_prefix}/{contour_file}", "line_color": spec["line_color"],
                 "default": bool(enabled.get("contours")), "opacity": 0.9,
-            },
-        ])
+            })
 
     pressure_fields = {}
     for level in PRESSURE_LEVELS_HPA:
@@ -621,13 +684,38 @@ def interactive_metadata(
             "default": False, "opacity": 0.85,
         })
 
-    vectors_file = "wind-vectors.geojson"
-    wind_vectors_geojson(lons, lats, arrays["_u10"], arrays["_v10"], output_dir / vectors_file)
-    layers.append({
-        "id": "wind_vectors", "field": "wind", "kind": "vectors",
-        "label": "10 m wind · vectors", "group": "ICON-EU fields",
-        "file": f"{public_prefix}/{vectors_file}", "default": True, "opacity": 0.85,
-    })
+    for field_id, spec in SPECIAL_DIAGNOSTIC_SPECS.items():
+        array = arrays[field_id]
+        fill_file = f"{field_id}-fill.webp"
+        grid_file = f"{field_id}.f32.gz"
+        render_fill(array, spec, output_dir / fill_file)
+        write_grid(array, output_dir / grid_file)
+        field_meta = {
+            "label": spec["label"], "unit": spec["unit"], "decimals": spec["decimals"],
+            "definition": spec["definition"], "method": spec["method"],
+            "grid_file": f"{public_prefix}/{grid_file}",
+            "fill_file": f"{public_prefix}/{fill_file}",
+            "range": [spec["vmin"], spec["vmax"]],
+            "color_stops": color_stops(spec),
+            "shape": [int(array.shape[0]), int(array.shape[1])],
+            "lat_start": float(lats[0]), "lat_step": float(np.median(np.diff(lats))),
+            "lon_start": float(lons[0]), "lon_step": float(np.median(np.diff(lons))),
+        }
+        for key in ("pressure_level_hpa", "pressure_variable", "pressure_span_hpa", "diagnostic_group"):
+            if key in spec:
+                field_meta[key] = spec[key]
+        fields[field_id] = field_meta
+        layer = {
+            "id": f"diagnostic_{field_id}_fill", "field": field_id, "kind": "raster",
+            "label": f"{spec['label']} · colour", "group": "MetPy diagnostics",
+            "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
+            "default": False, "opacity": 0.58, "display_resampling": "bilinear_2x",
+        }
+        for key in ("pressure_level_hpa", "pressure_variable", "pressure_span_hpa", "diagnostic_group"):
+            if key in spec:
+                layer[key] = spec[key]
+        layers.append(layer)
+
     sat_west, sat_south, sat_east, sat_north = syn.BBOX
     satellite_bounds = [[sat_south, sat_west], [sat_north, sat_east]]
     layers[0:0] = [
@@ -758,6 +846,31 @@ def main() -> int:
                         if satellite_native
                         else "Rendered EUMETView WMS infrared image downloaded for display; numerical brightness temperature is not available from this fallback."
                     )
+            existing_satellite_ids = {layer.get("id") for layer in step_meta["layers"]}
+            for product_key, product in (satellite_meta.get("products") or {}).items():
+                if product_key in {"geocolour", "ir105"}:
+                    continue
+                raw_file = product.get("raw_file")
+                if not raw_file:
+                    continue
+                layer_id = f"satellite_{product_key}"
+                if layer_id in existing_satellite_ids:
+                    continue
+                step_meta["layers"].insert(2, {
+                    "id": layer_id,
+                    "kind": "satellite",
+                    "label": product.get("title") or product_key.replace("_", " ").title(),
+                    "group": "Satellite",
+                    "file": f"satellite/{raw_file}",
+                    "bounds": step_meta["bounds"],
+                    "default": False,
+                    "opacity": 0.68,
+                    "source_kind": product.get("source_kind") or satellite_source["kind"],
+                    "source_label": satellite_source["label"],
+                    "definition": product.get("definition") or product.get("subtitle") or "Derived satellite composite.",
+                    "method": product.get("method") or "Native EUMETSAT FCI Level-1c processed with Satpy.",
+                })
+
             for field_id, field_meta in (satellite_meta.get("numeric_fields") or {}).items():
                 step_meta["fields"][field_id] = dict(field_meta)
                 if field_id == "sat_ir105_bt":
@@ -772,7 +885,7 @@ def main() -> int:
                 "horizontal": {"coordinates": ["latitude", "longitude"]},
                 "pressure_level_hpa": {
                     "values": list(PRESSURE_LEVELS_HPA),
-                    "variables": ["temperature", "geopotential_height", "relative_humidity", "wind", "potential_temperature", "relative_vorticity", "horizontal_divergence"],
+                    "variables": ["temperature", "geopotential_height", "relative_humidity", "wind", "potential_temperature", "relative_vorticity", "horizontal_divergence", "equivalent_potential_temperature_850", "frontogenesis_850", "absolute_vorticity_500", "wind_shear_850_500"],
                 },
             }
             meta_file = step_dir / "meta.json"

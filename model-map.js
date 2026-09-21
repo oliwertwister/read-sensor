@@ -309,6 +309,7 @@
         ? "Infrared image with queryable 10.5 µm brightness temperature."
         : "Infrared 10.5 µm satellite display image.";
     }
+    if (def.kind === "satellite" && def.definition) return def.definition;
     const descriptions = {
       t2m: "Air temperature 2 m above ground.",
       dewpoint2m: "Dew point 2 m above ground.",
@@ -372,6 +373,9 @@
   function layerSection(def) {
     if (def.group === "Satellite") {
       return { key: "satellite", label: "Satellite observation", order: 0 };
+    }
+    if (def.diagnostic_group === "cross-level") {
+      return { key: "cross-level", label: "Cross-level diagnostics", order: 3 };
     }
     if (def.pressure_level_hpa == null) {
       return { key: "surface", label: "Surface fields", order: 1 };

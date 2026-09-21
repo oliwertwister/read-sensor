@@ -17,6 +17,8 @@ import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
+from monitor.telemetry import record_transfer
+
 # Natural Earth 1:50m Admin-0 country polygons (public-domain map geometry).
 COUNTRIES_URL = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson"
 
@@ -46,15 +48,17 @@ def fetch_bytes(url: str, *, attempts: int = 4, expected_prefix: str | None = No
                 "User-Agent": "read-sensor-satellite/1.0",
                 "Accept": "image/png,image/*;q=0.9,application/xml;q=0.5,*/*;q=0.1",
             })
+            started = time.perf_counter()
             with urlopen(req, timeout=90) as response:
                 payload = response.read()
                 content_type = (response.headers.get("Content-Type") or "").lower()
-                if expected_prefix and not content_type.startswith(expected_prefix):
-                    preview = payload[:160].decode("utf-8", errors="replace").replace("\n", " ")
-                    raise RuntimeError(f"Unexpected Content-Type {content_type!r}: {preview}")
-                if not payload:
-                    raise RuntimeError("Empty upstream response")
-                return payload
+            record_transfer(url, len(payload), time.perf_counter() - started)
+            if expected_prefix and not content_type.startswith(expected_prefix):
+                preview = payload[:160].decode("utf-8", errors="replace").replace("\n", " ")
+                raise RuntimeError(f"Unexpected Content-Type {content_type!r}: {preview}")
+            if not payload:
+                raise RuntimeError("Empty upstream response")
+            return payload
         except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
             last_error = error
             if attempt < attempts:

@@ -52,6 +52,14 @@ def main() -> None:
             assert np.all(np.isfinite(arrays[key]))
         assert np.nanmean(arrays[f"theta_{level}"]) > np.nanmean(arrays[f"temp_{level}"] + 273.15)
 
+    for key in ("thetae_850", "frontogenesis_850", "absolute_vorticity_500", "shear_850_500"):
+        assert key in arrays
+        assert arrays[key].shape == arrays["t2m"].shape
+        assert np.all(np.isfinite(arrays[key]))
+    assert np.nanmean(arrays["thetae_850"]) > np.nanmean(arrays["theta_850"])
+    assert np.nanmin(arrays["absolute_vorticity_500"]) > -5.0
+    assert np.nanmin(arrays["shear_850_500"]) >= 0.0
+
     print("MetPy diagnostics regression test: OK")
 
 

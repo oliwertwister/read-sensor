@@ -15,6 +15,7 @@ import json
 import math
 import re
 import tempfile
+import time
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -26,6 +27,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from PIL import Image
+
+from monitor.telemetry import record_transfer
 
 BASE = "https://opendata.dwd.de/weather/nwp/icon-eu/grib"
 CYCLES = ("00", "06", "12", "18")
@@ -44,8 +47,11 @@ USER_AGENT = "read-sensor-icon/1.0"
 
 def fetch_bytes(url: str, timeout: int = 90) -> bytes:
     request = Request(url, headers={"User-Agent": USER_AGENT})
+    started = time.perf_counter()
     with urlopen(request, timeout=timeout) as response:
-        return response.read()
+        payload = response.read()
+    record_transfer(url, len(payload), time.perf_counter() - started)
+    return payload
 
 
 def list_field(cycle: str, field: str) -> list[dict]:

@@ -8,9 +8,12 @@ import bz2
 import concurrent.futures
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import Request, urlopen
+
+from monitor.telemetry import record_transfer
 
 INTL_BASE = "https://opendata.dwd.de/weather/weather_reports/synoptic/international/"
 DE_BASE = "https://opendata.dwd.de/weather/weather_reports/synoptic/germany/json/"
@@ -24,8 +27,11 @@ SECTION_RE = re.compile(r"\b(?:AAXX|BBXX|OOXX)\b")
 
 def fetch_bytes(url: str, timeout: int = 30) -> bytes:
     request = Request(url, headers={"User-Agent": USER_AGENT})
+    started = time.perf_counter()
     with urlopen(request, timeout=timeout) as response:
-        return response.read()
+        payload = response.read()
+    record_transfer(url, len(payload), time.perf_counter() - started)
+    return payload
 
 
 def iso_utc(value: datetime) -> str:

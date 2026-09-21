@@ -1253,6 +1253,51 @@ function updateSatelliteFreshness() {
     : "Age of the selected satellite observation.";
 }
 
+function satelliteProductLabel(key, product) {
+  const labels = {
+    geocolour: "Natural colour",
+    ir105: "IR 10.5 µm",
+    airmass: "Airmass",
+    day_severe_storms: "Severe storms",
+    cloud_phase: "Cloud phase",
+    cloud_type: "Cloud type",
+    fire_temperature: "Fire temperature",
+    snow: "Snow",
+    geo_color: "GeoColor",
+    ir_sandwich: "IR Sandwich",
+  };
+  return labels[key] || product?.title || key.replaceAll("_", " ");
+}
+
+function buildSatelliteProductButtons() {
+  const container = $("satelliteProductButtons");
+  if (!container || !satelliteMeta?.products) return;
+  const order = [
+    "geocolour", "ir105", "airmass", "day_severe_storms", "cloud_phase",
+    "cloud_type", "ir_sandwich", "snow", "fire_temperature", "geo_color",
+  ];
+  const keys = [
+    ...order.filter((key) => satelliteMeta.products[key]),
+    ...Object.keys(satelliteMeta.products).filter((key) => !order.includes(key)),
+  ];
+  if (!satelliteMeta.products[satelliteProduct]) {
+    satelliteProduct = keys[0] || "geocolour";
+  }
+  container.replaceChildren();
+  for (const key of keys) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.satProduct = key;
+    button.textContent = satelliteProductLabel(key, satelliteMeta.products[key]);
+    button.classList.toggle("active", key === satelliteProduct);
+    button.addEventListener("click", () => {
+      satelliteProduct = key;
+      renderSatellite();
+    });
+    container.append(button);
+  }
+}
+
 function renderSatellite() {
   if (!satelliteMeta) return;
   const product = satelliteMeta.products?.[satelliteProduct];
@@ -1262,12 +1307,20 @@ function renderSatellite() {
   });
   const version = encodeURIComponent(product.observed_at || satelliteMeta.generated_at || Date.now());
   $("satelliteImage").src = `satellite/${product.file}?v=${version}`;
-  $("satelliteTitle").textContent = `${satelliteMeta.platform} · ${satelliteMeta.instrument} · ${product.title}`;
-  $("satelliteCaption").textContent = product.subtitle;
+  const platform = satelliteMeta.platform || "Meteosat Third Generation";
+  const instrument = satelliteMeta.instrument || "FCI";
+  $("satelliteTitle").textContent = `${platform} · ${instrument} · ${product.title}`;
+  $("satelliteCaption").textContent = product.subtitle || "";
   renderSatelliteTime("satObserved", "satObservedUtc", product.observed_at);
   renderSatelliteTime("satGenerated", "satGeneratedUtc", satelliteMeta.generated_at);
   $("satCadence").textContent = `~${satelliteMeta.nominal_cadence_minutes || 10} min`;
-  $("satProcessing").textContent = satelliteMeta.boundary_overlay || "Image + grid + Natural Earth 1:50m Admin-0 country geometry fitted to CRS:84 extent";
+  $("satProcessing").textContent = product.method || satelliteMeta.boundary_overlay || "Satellite product resampled to the dashboard Europe grid.";
+  $("satSource").textContent = satelliteMeta.backend === "satpy-native-fci-l1c"
+    ? "EUMETSAT Data Store · native FCI Level-1c"
+    : "EUMETSAT EUMETView · WMS image";
+  $("satAboutText").textContent = product.definition
+    ? product.definition
+    : "Meteosat Third Generation FCI imagery. The coordinate grid and country boundaries use the same requested WGS84 / CRS:84 extent as the image.";
   updateSatelliteFreshness();
 }
 
@@ -1276,6 +1329,7 @@ async function loadSatellite() {
     const response = await fetch(`satellite/latest.json?t=${Date.now()}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     satelliteMeta = await response.json();
+    buildSatelliteProductButtons();
     renderSatellite();
   } catch (error) {
     console.error("satellite_failed", error);
