@@ -100,10 +100,17 @@ def load_scene(input_dir: Path):
     files = find_files_and_readers(base_dir=str(input_dir), reader=READER)
     if not files:
         raise RuntimeError(f"Satpy found no {READER} files in {input_dir}")
-    scene = Scene(filenames=files)
-    scene.load(["natural_color", "ir_105"], upper_right_corner="NE")
+    source_scene = Scene(filenames=files)
+    source_scene.load(["natural_color", "ir_105"], upper_right_corner="NE")
     target = europe_area()
-    return scene.resample(target, resampler="nearest", radius_of_influence=5000)
+    resampled_scene = source_scene.resample(
+        target,
+        resampler="nearest",
+        radius_of_influence=5000,
+    )
+    # Keep source_scene alive while lazy resampled datasets are computed. The
+    # FCI reader's NetCDF file handlers belong to the source Scene.
+    return source_scene, resampled_scene
 
 
 def save_enhanced(scene: Scene, dataset: str, destination: Path) -> Image.Image:
@@ -155,7 +162,7 @@ def natural_earth_boundaries() -> dict:
 
 def render(input_dir: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
-    scene = load_scene(input_dir)
+    source_scene, scene = load_scene(input_dir)
     countries = natural_earth_boundaries()
 
     natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
