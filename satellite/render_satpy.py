@@ -336,8 +336,6 @@ def render(input_dir: Path, output: Path) -> dict:
         natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
         ir_display = save_enhanced(scene, "ir_105", output / "_satpy-ir105")
         daylight_mask = daylight_alpha_mask(natural.size, observed_at) if observed_at else None
-        if daylight_mask is not None:
-            natural = apply_alpha_mask(natural, daylight_mask)
 
         composite_images = {}
         for key in loaded_composites:
@@ -398,7 +396,7 @@ def render(input_dir: Path, output: Path) -> dict:
                 "title": "Meteosat FCI · Natural colour · native Level-1c",
                 "subtitle": "Satpy natural_color composite resampled to the read-sensor Europe grid",
                 "definition": "A multispectral RGB composite designed to approximate a natural daytime appearance of clouds and the surface.",
-                "method": "Native FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → PyOrbital solar-zenith alpha mask (opaque through 78°, fades to transparent by 88°) → WebP.",
+                "method": "Native FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → WebP.",
                 "source_kind": "native-derived",
                 "observed_at": observed_at,
                 "stale": False,
