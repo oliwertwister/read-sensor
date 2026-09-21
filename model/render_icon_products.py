@@ -122,12 +122,12 @@ PRESSURE_DISPLAY_SPECS = {
     },
     "vorticity": {
         "label": "Relative vorticity", "unit": "1e-5 s^-1", "cmap": "RdBu_r",
-        "vmin": -20.0, "vmax": 20.0, "contours": list(np.arange(-30, 31, 5)),
+        "vmin": -20.0, "vmax": 20.0, "contours": [],
         "line_color": "#6a1b9a", "decimals": 1, "label_every": 10,
     },
     "divergence": {
         "label": "Horizontal divergence", "unit": "1e-5 s^-1", "cmap": "PuOr",
-        "vmin": -20.0, "vmax": 20.0, "contours": list(np.arange(-30, 31, 5)),
+        "vmin": -20.0, "vmax": 20.0, "contours": [],
         "line_color": "#00695c", "decimals": 1, "label_every": 10,
     },
 }
@@ -512,14 +512,12 @@ def interactive_metadata(
             contour_file = f"{field_id}-contours.geojson"
             grid_file = f"{field_id}.f32.gz"
             render_fill(array, spec, output_dir / fill_file)
-            contour_geojson(lons, lats, array, spec, output_dir / contour_file)
             write_grid(array, output_dir / grid_file)
             field_meta = {
                 "label": spec["label"], "unit": spec["unit"], "decimals": spec["decimals"],
                 "pressure_level_hpa": level, "pressure_variable": kind,
                 "grid_file": f"{public_prefix}/{grid_file}",
                 "fill_file": f"{public_prefix}/{fill_file}",
-                "contour_file": f"{public_prefix}/{contour_file}",
                 "range": [spec["vmin"], spec["vmax"]],
                 "color_stops": color_stops(spec),
                 "shape": [int(array.shape[0]), int(array.shape[1])],
@@ -528,22 +526,23 @@ def interactive_metadata(
             }
             fields[field_id] = field_meta
             pressure_fields[str(level)][kind] = field_id
-            layers.extend([
-                {
-                    "id": f"pressure_{kind}_fill_{level}", "field": field_id, "kind": "raster",
-                    "label": f"{spec['label']} · colour", "group": "Pressure-level fields",
-                    "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
-                    "pressure_level_hpa": level, "pressure_variable": kind,
-                    "default": False, "opacity": 0.55, "display_resampling": "bilinear_2x",
-                },
-                {
+            layers.append({
+                "id": f"pressure_{kind}_fill_{level}", "field": field_id, "kind": "raster",
+                "label": f"{spec['label']} · colour", "group": "Pressure-level fields",
+                "file": f"{public_prefix}/{fill_file}", "bounds": raster_bounds,
+                "pressure_level_hpa": level, "pressure_variable": kind,
+                "default": False, "opacity": 0.55, "display_resampling": "bilinear_2x",
+            })
+            if spec["contours"]:
+                contour_geojson(lons, lats, array, spec, output_dir / contour_file)
+                field_meta["contour_file"] = f"{public_prefix}/{contour_file}"
+                layers.append({
                     "id": f"pressure_{kind}_contours_{level}", "field": field_id, "kind": "contours",
                     "label": f"{spec['label']} · isolines", "group": "Pressure-level fields",
                     "file": f"{public_prefix}/{contour_file}", "line_color": spec["line_color"],
                     "pressure_level_hpa": level, "pressure_variable": kind,
                     "default": False, "opacity": 0.9,
-                },
-            ])
+                })
 
         pressure_vectors_file = f"wind-{level}-vectors.geojson"
         wind_vectors_geojson(

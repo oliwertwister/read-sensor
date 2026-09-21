@@ -13,7 +13,7 @@ The project deliberately separates a static public frontend from data collection
 - **Sensors** — D1-backed telemetry with selectable latest-N or rolling-window history, optional 5/10/15/20/25-minute averaging, CSV export, a time-series chart, and a normalized temperature-distribution line plot.
 - **Berlin Weather** — current conditions from Open-Meteo.
 - **Aviation Weather** — worldwide station search, map selection, and METAR/TAF retrieval through the Aviation Weather Center Data API.
-- **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields include T2M, MetPy-derived 2 m dew point, PMSL, RH2M, total cloud cover, accumulated precipitation and 10 m wind, plus temperature, geopotential height, relative humidity, wind, potential temperature, relative vorticity and horizontal divergence at 850/700/500 hPa.
+- **DWD ICON-EU** — interactive multidimensional Leaflet field explorer plus a static synoptic overlay. The map now has a bounded forecast-time dimension (previous/current/next complete valid hour from one run), independent satellite/raster/isoline/wind layers, per-layer opacity, bilinear or nearest-grid point sampling, and click queries against native numerical grids. Current quantitative fields include T2M, MetPy-derived 2 m dew point, PMSL, RH2M, total cloud cover, accumulated precipitation and 10 m wind, plus temperature, geopotential height, relative humidity, wind, potential temperature plus relative vorticity and horizontal divergence at 850/700/500 hPa; the latter two are colour/query products without dense isolines.
 - **SYNOP** — worldwide WMO station search plus a recent-report map assembled from DWD SYNOP feeds; selected raw `AAXX` reports are decoded in the browser when available.
 - **Satellite** — resilient EUMETView WMS imagery remains the baseline; an optional credential-gated EUMDAC + Satpy path can replace it with native MTG/FCI Level-1c products and a queryable IR brightness-temperature grid.
 - **Berlin Map** — Leaflet/OpenStreetMap with WGS84 coordinate grid and local geometry loading.
@@ -48,7 +48,7 @@ The quantitative ICON-EU build is orchestrated by model/render_icon_products.py,
 2. download the required surface and pressure-level fields once per build;
 3. decode GRIB2 with ecCodes/cfgrib into xarray arrays;
 4. normalize coordinates and subset the Europe domain;
-5. use MetPy to derive 2 m dew point plus pressure-level potential temperature, relative vorticity and horizontal divergence;
+5. use MetPy to derive 2 m dew point plus pressure-level potential temperature, plus relative vorticity and horizontal divergence as colour/query products without dense isolines;
 6. derive display units and wind speed;
 7. export independent transparent WebP colour rasters, GeoJSON isolines, GeoJSON wind vectors and native Float32 grids for point queries;
 8. generate the compact satellite + isobar/isotherm/wind static synoptic product from the same build;
