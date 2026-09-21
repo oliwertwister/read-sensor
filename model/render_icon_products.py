@@ -93,6 +93,68 @@ DISPLAY_SPECS = {
     },
 }
 
+PARAMETER_INFO = {
+    "t2m": {
+        "definition": "Air temperature 2 m above the model surface.",
+        "method": "Direct DWD ICON-EU T_2M GRIB2; decoded with xarray/cfgrib and converted from kelvin to °C.",
+    },
+    "pmsl": {
+        "definition": "Atmospheric pressure reduced to mean sea level so locations at different elevations can be compared.",
+        "method": "Direct DWD ICON-EU PMSL GRIB2; decoded with xarray/cfgrib and converted from Pa to hPa.",
+    },
+    "rh2m": {
+        "definition": "Relative humidity is the amount of water vapour relative to saturation at the same temperature, expressed as a percentage.",
+        "method": "Direct DWD ICON-EU RELHUM_2M GRIB2; decoded with xarray/cfgrib.",
+    },
+    "dewpoint2m": {
+        "definition": "The temperature to which air must be cooled, at constant pressure and water-vapour content, to reach saturation (100% relative humidity).",
+        "method": "Derived from DWD T_2M and RELHUM_2M with MetPy dewpoint_from_relative_humidity(); output converted to °C.",
+    },
+    "cloud": {
+        "definition": "Total cloud cover is the fraction of the sky/model column covered by cloud, expressed as a percentage.",
+        "method": "Direct DWD ICON-EU CLCT GRIB2; decoded with xarray/cfgrib.",
+    },
+    "precip": {
+        "definition": "Total precipitation accumulated from model initialization to the selected valid time, expressed as liquid-water equivalent.",
+        "method": "Direct DWD ICON-EU TOT_PREC GRIB2; decoded with xarray/cfgrib.",
+    },
+    "wind": {
+        "definition": "Horizontal wind speed 10 m above the surface.",
+        "method": "Derived from direct DWD U_10M and V_10M GRIB2 components with NumPy hypot(u, v).",
+    },
+}
+
+PRESSURE_PARAMETER_INFO = {
+    "temp": {
+        "definition": "Air temperature on the selected constant-pressure surface.",
+        "method": "Direct DWD ICON-EU pressure-level T GRIB2; decoded with xarray/cfgrib and converted from kelvin to °C.",
+    },
+    "z": {
+        "definition": "Geopotential height is the height of a pressure surface expressed using geopotential; shown here in decametres.",
+        "method": "Derived from direct DWD ICON-EU FI geopotential using FI / 9.80665 / 10 to obtain decametres.",
+    },
+    "rh": {
+        "definition": "Relative humidity on the selected pressure surface, relative to saturation at the local temperature.",
+        "method": "Direct DWD ICON-EU pressure-level RELHUM GRIB2; decoded with xarray/cfgrib.",
+    },
+    "wind": {
+        "definition": "Magnitude of the horizontal wind vector on the selected pressure surface.",
+        "method": "Derived from direct DWD pressure-level U and V components with NumPy hypot(u, v); vectors use the original components.",
+    },
+    "theta": {
+        "definition": "Potential temperature is the temperature an air parcel would have if brought dry-adiabatically to 1000 hPa.",
+        "method": "Calculated from pressure-level temperature with MetPy potential_temperature().",
+    },
+    "vorticity": {
+        "definition": "Relative vorticity measures local rotation of the horizontal wind field; positive values are cyclonic in the Northern Hemisphere.",
+        "method": "Calculated from DWD pressure-level U/V wind with MetPy vorticity(); grid spacing comes from MetPy lat_lon_grid_deltas().",
+    },
+    "divergence": {
+        "definition": "Horizontal divergence measures spreading or convergence of the wind field; positive values diverge and negative values converge.",
+        "method": "Calculated from DWD pressure-level U/V wind with MetPy divergence(); grid spacing comes from MetPy lat_lon_grid_deltas().",
+    },
+}
+
 PRESSURE_LEVELS_HPA = (850, 700, 500)
 PRESSURE_DISPLAY_SPECS = {
     "temp": {
@@ -475,6 +537,7 @@ def interactive_metadata(
             "label": spec["label"],
             "unit": spec["unit"],
             "decimals": spec["decimals"],
+            **PARAMETER_INFO[field_id],
             "grid_file": f"{public_prefix}/{grid_file}",
             "fill_file": f"{public_prefix}/{fill_file}",
             "contour_file": f"{public_prefix}/{contour_file}",
@@ -515,6 +578,7 @@ def interactive_metadata(
             write_grid(array, output_dir / grid_file)
             field_meta = {
                 "label": spec["label"], "unit": spec["unit"], "decimals": spec["decimals"],
+                **PRESSURE_PARAMETER_INFO[kind],
                 "pressure_level_hpa": level, "pressure_variable": kind,
                 "grid_file": f"{public_prefix}/{grid_file}",
                 "fill_file": f"{public_prefix}/{fill_file}",
@@ -678,10 +742,22 @@ def main() -> int:
                     layer["label"] = "Meteosat FCI · Natural colour"
                     layer["source_kind"] = satellite_source["kind"]
                     layer["source_label"] = satellite_source["label"]
+                    layer["definition"] = "A multispectral RGB composite designed to resemble the visible appearance of clouds and the surface."
+                    layer["method"] = (
+                        "Native EUMETSAT FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → WebP."
+                        if satellite_native
+                        else "Rendered EUMETView WMS image downloaded for display; no underlying numerical grid is available from this fallback."
+                    )
                 elif layer.get("id") == "satellite_ir105":
                     layer["label"] = "Meteosat FCI · Infrared 10.5 µm"
                     layer["source_kind"] = satellite_source["kind"]
                     layer["source_label"] = satellite_source["label"]
+                    layer["definition"] = "Thermal infrared radiation near 10.5 µm; colder brightness temperatures usually indicate higher cloud tops, while warmer values often represent lower cloud or surface."
+                    layer["method"] = (
+                        "Native EUMETSAT FCI Level-1c NetCDF → Satpy fci_l1c_nc → ir_105 calibrated dataset → nearest-neighbour Europe resampling; display image and numerical brightness-temperature grid are generated separately."
+                        if satellite_native
+                        else "Rendered EUMETView WMS infrared image downloaded for display; numerical brightness temperature is not available from this fallback."
+                    )
             for field_id, field_meta in (satellite_meta.get("numeric_fields") or {}).items():
                 step_meta["fields"][field_id] = dict(field_meta)
                 if field_id == "sat_ir105_bt":

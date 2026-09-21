@@ -220,6 +220,8 @@ def render(input_dir: Path, output: Path) -> dict:
                 "label": "FCI 10.5 µm brightness temperature",
                 "unit": "K",
                 "decimals": 1,
+                "definition": "Brightness temperature is the blackbody-equivalent temperature corresponding to the measured 10.5 µm infrared radiance.",
+                "method": "Native EUMETSAT FCI Level-1c NetCDF read with Satpy fci_l1c_nc; Satpy ir_105 calibrated values are resampled by nearest neighbour and written as a Float32 kelvin grid.",
                 "grid_file": "satellite/ir105-bt.f32.gz",
                 "shape": [int(height), int(width)],
                 "lat_start": float(north - dy / 2.0),

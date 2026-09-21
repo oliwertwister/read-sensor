@@ -393,6 +393,98 @@
     return def.label;
   }
 
+  function layerRepresentationInfo(def) {
+    if (def.kind === "raster") {
+      return "Colour raster rendered from the numerical grid with Matplotlib; Leaflet displays the 2× bilinear image, while map queries read the underlying Float32 grid.";
+    }
+    if (def.kind === "contours") {
+      return "Isolines extracted from the same numerical grid with Matplotlib ax.contour() and stored as GeoJSON.";
+    }
+    if (def.kind === "vectors") {
+      return "Wind U/V components are spatially sampled and converted to speed/direction in Python, then drawn as vectors in Leaflet.";
+    }
+    if (def.kind === "satellite") {
+      return def.field
+        ? "WebP image overlay for display; map queries use a separate calibrated Float32 brightness-temperature grid."
+        : "WebP image overlay for display; this layer itself is not a numerical grid.";
+    }
+    return "Displayed directly from the generated layer product.";
+  }
+
+  function layerOriginLabel(def, field) {
+    const method = String(def.method || field?.method || "");
+    if (def.source_kind === "native-derived") return "Native FCI";
+    if (def.source_kind === "rendered-image") return "WMS image";
+    if (/MetPy/i.test(method)) return "Calculated · MetPy";
+    if (/NumPy hypot/i.test(method)) return "Calculated · NumPy";
+    if (/Derived/i.test(method)) return "Derived";
+    if (/Direct DWD/i.test(method)) return "Direct DWD";
+    return "Processed";
+  }
+
+  function layerInformation(def) {
+    const field = def.field ? iconModelState.meta.fields[def.field] : null;
+    return {
+      definition: def.definition || field?.definition || activeLayerDescription(def),
+      method: def.method || field?.method || def.source_label || "Generated from the current layer source.",
+      representation: layerRepresentationInfo(def),
+      origin: layerOriginLabel(def, field),
+    };
+  }
+
+  function closeOtherLayerInfoPanels(exceptPanel = null) {
+    for (const panel of document.querySelectorAll(".model-layer-info-panel:not([hidden])")) {
+      if (panel === exceptPanel) continue;
+      panel.hidden = true;
+      const button = document.querySelector(`[aria-controls="${panel.id}"]`);
+      if (button) button.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function buildLayerInfoPanel(def, button) {
+    const info = layerInformation(def);
+    const panel = document.createElement("div");
+    panel.className = "model-layer-info-panel";
+    panel.id = `layer-info-${def.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    panel.hidden = true;
+
+    const origin = document.createElement("span");
+    origin.className = "model-layer-info-origin";
+    origin.textContent = info.origin;
+    panel.append(origin);
+
+    for (const [labelText, value] of [
+      ["Definition", info.definition],
+      ["Source / method", info.method],
+      ["Display", info.representation],
+    ]) {
+      const line = document.createElement("div");
+      line.className = "model-layer-info-line";
+      const label = document.createElement("strong");
+      label.textContent = labelText;
+      const text = document.createElement("span");
+      text.textContent = value;
+      line.append(label, text);
+      panel.append(line);
+    }
+
+    button.setAttribute("aria-controls", panel.id);
+    button.setAttribute("aria-expanded", "false");
+    button.addEventListener("click", () => {
+      const opening = panel.hidden;
+      closeOtherLayerInfoPanels(opening ? panel : null);
+      panel.hidden = !opening;
+      button.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || panel.hidden) return;
+      panel.hidden = true;
+      button.setAttribute("aria-expanded", "false");
+      event.stopPropagation();
+    });
+    return panel;
+  }
+
   function buildLayerRow(def) {
     const row = document.createElement("div");
     row.className = "model-layer-row";
@@ -410,10 +502,21 @@
     name.textContent = def.kind === "satellite" ? def.label : layerKindLabel(def);
     label.append(checkbox, name);
 
+    const infoButton = document.createElement("button");
+    infoButton.type = "button";
+    infoButton.className = "model-layer-info-button";
+    infoButton.textContent = "i";
+    infoButton.title = "Layer information";
+    infoButton.setAttribute("aria-label", `Layer information: ${def.label}`);
+
     const opacityText = document.createElement("output");
     opacityText.className = "model-layer-opacity-value";
     opacityText.textContent = `${Math.round((def.opacity ?? 1) * 100)}%`;
-    top.append(label, opacityText);
+
+    const rowActions = document.createElement("div");
+    rowActions.className = "model-layer-row-actions";
+    rowActions.append(infoButton, opacityText);
+    top.append(label, rowActions);
 
     const slider = document.createElement("input");
     slider.type = "range";
@@ -460,6 +563,7 @@
       const field = iconModelState.meta.fields[def.field];
       if (field) row.append(colorLegend(field));
     }
+    row.append(buildLayerInfoPanel(def, infoButton));
     iconModelState.rows.set(def.id, row);
     return row;
   }
