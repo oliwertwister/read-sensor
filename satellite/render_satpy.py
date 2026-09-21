@@ -23,6 +23,7 @@ import dask
 import hdf5plugin  # noqa: F401  # registers HDF5 compression filters
 import numpy as np
 from PIL import Image
+from pyorbital.astronomy import sun_zenith_angle
 from pyresample import create_area_def
 from satpy import Scene, find_files_and_readers
 
@@ -35,6 +36,15 @@ READER = "fci_l1c_nc"
 RESOLUTION_DEGREES = 0.05
 NATIVE_LAG_MINUTES = 75
 LOOKBACK_MINUTES = 180
+DAYLIGHT_ALPHA_LOW = 78.0
+DAYLIGHT_ALPHA_HIGH = 88.0
+DAYLIGHT_ONLY_COMPOSITES = {
+    "day_severe_storms",
+    "cloud_phase",
+    "cloud_type",
+    "snow",
+    "ir_sandwich",
+}
 # EUMDAC 3.1.1 consumes the search iterator while expanding
 # --download-coverage, leaving the subsequent download order empty. These are
 # the same Q4 entry patterns used internally by EUMDAC, passed directly so the
@@ -231,6 +241,31 @@ def save_enhanced(scene: Scene, dataset: str, destination: Path) -> Image.Image:
     return image
 
 
+def daylight_alpha_mask(size: tuple[int, int], observed_at: str) -> np.ndarray:
+    width, height = size
+    when = datetime.fromisoformat(observed_at.replace("Z", "+00:00")).astimezone(timezone.utc).replace(tzinfo=None)
+    west, south, east, north = legacy.BBOX
+    dx = (east - west) / width
+    dy = (north - south) / height
+    lons = west + dx * (np.arange(width, dtype=np.float64) + 0.5)
+    lats = north - dy * (np.arange(height, dtype=np.float64) + 0.5)
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+    sza = sun_zenith_angle(when, lon_grid, lat_grid)
+    daylight = np.clip(
+        (DAYLIGHT_ALPHA_HIGH - sza) / (DAYLIGHT_ALPHA_HIGH - DAYLIGHT_ALPHA_LOW),
+        0.0,
+        1.0,
+    )
+    return np.rint(daylight * 255.0).astype(np.uint8)
+
+
+def apply_alpha_mask(image: Image.Image, mask: np.ndarray) -> Image.Image:
+    rgba = np.asarray(image.convert("RGBA")).copy()
+    existing = rgba[:, :, 3].astype(np.uint16)
+    rgba[:, :, 3] = ((existing * mask.astype(np.uint16) + 127) // 255).astype(np.uint8)
+    return Image.fromarray(rgba, mode="RGBA")
+
+
 def brightness_temperature(scene: Scene) -> tuple[np.ndarray, object]:
     data = scene["ir_105"]
     values = np.asarray(data.values, dtype=np.float32)
@@ -296,15 +331,22 @@ def render(input_dir: Path, output: Path) -> dict:
         ) = load_scene(input_dir)
         countries = natural_earth_boundaries()
 
+        bt_k, ir_data = brightness_temperature(scene)
+        observed_at = utc_iso(ir_data.attrs.get("start_time") or ir_data.attrs.get("end_time"))
         natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
         ir_display = save_enhanced(scene, "ir_105", output / "_satpy-ir105")
-        bt_k, ir_data = brightness_temperature(scene)
+        daylight_mask = daylight_alpha_mask(natural.size, observed_at) if observed_at else None
+        if daylight_mask is not None:
+            natural = apply_alpha_mask(natural, daylight_mask)
 
         composite_images = {}
         for key in loaded_composites:
             cfg = COMPOSITE_SPECS[key]
             try:
-                composite_images[key] = save_enhanced(scene, cfg["dataset"], output / f"_satpy-{cfg['file_stem']}")
+                image = save_enhanced(scene, cfg["dataset"], output / f"_satpy-{cfg['file_stem']}")
+                if key in DAYLIGHT_ONLY_COMPOSITES and daylight_mask is not None:
+                    image = apply_alpha_mask(image, daylight_mask)
+                composite_images[key] = image
             except Exception as error:
                 composite_warnings.append(f"{key}: render failed: {type(error).__name__}: {error}")
 
@@ -330,7 +372,6 @@ def render(input_dir: Path, output: Path) -> dict:
         legacy.atomic_save_webp(image, output / f"{stem}-raw.webp")
         legacy.atomic_save_webp(legacy.decorate(image, countries), output / f"{stem}.webp")
 
-    observed_at = utc_iso(ir_data.attrs.get("start_time") or ir_data.attrs.get("end_time"))
     generated_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     west, south, east, north = legacy.BBOX
     height, width = bt_k.shape[-2:]
@@ -357,7 +398,7 @@ def render(input_dir: Path, output: Path) -> dict:
                 "title": "Meteosat FCI · Natural colour · native Level-1c",
                 "subtitle": "Satpy natural_color composite resampled to the read-sensor Europe grid",
                 "definition": "A multispectral RGB composite designed to approximate a natural daytime appearance of clouds and the surface.",
-                "method": "Native FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → WebP.",
+                "method": "Native FCI Level-1c NetCDF → Satpy fci_l1c_nc → natural_color composite → nearest-neighbour Europe resampling → PyOrbital solar-zenith alpha mask (opaque through 78°, fades to transparent by 88°) → WebP.",
                 "source_kind": "native-derived",
                 "observed_at": observed_at,
                 "stale": False,
@@ -402,7 +443,13 @@ def render(input_dir: Path, output: Path) -> dict:
             "observed_at": observed_at,
             "stale": False,
             "definition": cfg["definition"],
-            "method": cfg["method"],
+            "method": (
+                cfg["method"]
+                + " Daylight validity is alpha-masked with PyOrbital solar zenith: "
+                  "opaque through 78°, fading to transparent by 88°."
+                if key in DAYLIGHT_ONLY_COMPOSITES
+                else cfg["method"]
+            ),
             "source_kind": "native-derived",
             "storage": webp_storage(output, stem),
         }
