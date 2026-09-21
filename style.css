@@ -2227,3 +2227,26 @@ a { color: #58a6ff; }
     max-height:42%;
   }
 }
+.model-layer-panel-actions {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:0 0 auto;
+}
+.model-layer-clear {
+  min-height:25px;
+  padding:0 8px;
+  border:1px solid #30363d;
+  border-radius:7px;
+  background:#0d1117;
+  color:#c9d1d9;
+  font:inherit;
+  font-size:.6rem;
+  font-weight:650;
+  cursor:pointer;
+}
+.model-layer-clear:hover {
+  border-color:#484f58;
+  background:#161b22;
+  color:#e6edf3;
+}
