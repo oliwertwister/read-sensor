@@ -18,6 +18,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import dask
 import hdf5plugin  # noqa: F401  # registers HDF5 compression filters
 import numpy as np
 from PIL import Image
@@ -162,12 +163,16 @@ def natural_earth_boundaries() -> dict:
 
 def render(input_dir: Path, output: Path) -> dict:
     output.mkdir(parents=True, exist_ok=True)
-    source_scene, scene = load_scene(input_dir)
-    countries = natural_earth_boundaries()
+    # netCDF-C access used by the FCI reader is not safe under concurrent
+    # threaded reads. Keep the native FCI graph single-threaded while it is
+    # materialized; this does not affect the separate ICON/MetPy pipeline.
+    with dask.config.set(scheduler="synchronous"):
+        source_scene, scene = load_scene(input_dir)
+        countries = natural_earth_boundaries()
 
-    natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
-    ir_display = save_enhanced(scene, "ir_105", output / "_satpy-ir105")
-    bt_k, ir_data = brightness_temperature(scene)
+        natural = save_enhanced(scene, "natural_color", output / "_satpy-natural")
+        ir_display = save_enhanced(scene, "ir_105", output / "_satpy-ir105")
+        bt_k, ir_data = brightness_temperature(scene)
 
     # Commit compatible files only after all expensive processing succeeded.
     legacy.atomic_save_webp(natural, output / "geocolour-raw.webp")
