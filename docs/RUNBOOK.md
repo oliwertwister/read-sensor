@@ -81,6 +81,8 @@ The same action is available in the GitHub web UI under **Actions → Deploy Git
 
 A full run performs Worker/frontend tests, refreshes SYNOP, renders the WMS satellite baseline, attempts the credential-gated native FCI/Satpy upgrade, renders the ICON-EU/MetPy products and local Zarr cube, uploads the accepted cube to R2 through GitHub OIDC, builds the data monitor, enforces storage guardrails, and deploys Pages.
 
+Markdown-only pushes do not run this expensive pipeline. They run the lightweight **Check documentation** workflow instead, which validates repository-local Markdown links. Any code/config/asset change still triggers the full Pages workflow; manual workflow dispatch is unaffected.
+
 ## Local validation and rendering
 
 Use Python 3.13 to match Actions:
