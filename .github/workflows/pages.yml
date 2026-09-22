@@ -121,13 +121,6 @@ jobs:
           PYTHONPATH=.:satellite python satellite/test_render_satellite.py
           PYTHONPATH=.:satellite python satellite/test_history.py
 
-      - name: Hydrate satellite history
-        run: |
-          python satellite/manage_history.py hydrate \
-            --output satellite/output \
-            --base-url https://oliwertwister.github.io/read-sensor/satellite \
-            --max-snapshots 4
-
       - name: Render latest Meteosat products
         run: python monitor/run_with_metrics.py --name "EUMETView WMS baseline" -- python satellite/render_satellite.py --output satellite/output
 
@@ -147,6 +140,14 @@ jobs:
           if ! PYTHONPATH=.:satellite python monitor/run_with_metrics.py --name "Native FCI / Satpy" -- python satellite/render_satpy.py --output satellite/output; then
             echo "::warning::Native FCI/Satpy refresh failed; keeping the WMS satellite products."
           fi
+
+      - name: Hydrate previous satellite snapshots
+        run: |
+          python satellite/manage_history.py hydrate \
+            --output satellite/output \
+            --base-url https://oliwertwister.github.io/read-sensor/satellite \
+            --max-snapshots 3 \
+            --exclude-current
 
       - name: Archive current satellite snapshot
         run: python satellite/manage_history.py archive --output satellite/output --max-snapshots 4

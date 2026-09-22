@@ -138,7 +138,7 @@ def fetch_bytes(url: str, timeout: int = 30) -> bytes:
     return payload
 
 
-def hydrate(output: Path, base_url: str, max_snapshots: int) -> list[dict]:
+def hydrate(output: Path, base_url: str, max_snapshots: int, exclude_id: str | None = None) -> list[dict]:
     output.mkdir(parents=True, exist_ok=True)
     base = base_url.rstrip("/")
     try:
@@ -148,8 +148,12 @@ def hydrate(output: Path, base_url: str, max_snapshots: int) -> list[dict]:
         return []
 
     snapshots = []
-    for item in (remote_index.get("snapshots") or [])[:max_snapshots]:
+    for item in remote_index.get("snapshots") or []:
+        if len(snapshots) >= max_snapshots:
+            break
         snapshot_id = str(item.get("id") or "")
+        if exclude_id and snapshot_id == exclude_id:
+            continue
         try:
             valid_id = safe_snapshot_id(item.get("observed_at") or "")
         except (TypeError, ValueError):
@@ -203,6 +207,11 @@ def main() -> int:
     hydrate_parser.add_argument("--output", default="satellite/output")
     hydrate_parser.add_argument("--base-url", required=True)
     hydrate_parser.add_argument("--max-snapshots", type=int, default=DEFAULT_MAX_SNAPSHOTS)
+    hydrate_parser.add_argument(
+        "--exclude-current",
+        action="store_true",
+        help="Exclude the observation currently described by OUTPUT/latest.json",
+    )
 
     args = parser.parse_args()
     if not 1 <= args.max_snapshots <= 12:
@@ -212,7 +221,11 @@ def main() -> int:
         record = archive(output, args.max_snapshots)
         print(json.dumps(record, indent=2, sort_keys=True))
     else:
-        hydrate(output, args.base_url, args.max_snapshots)
+        exclude_id = None
+        if args.exclude_current:
+            current_meta = read_json(output / "latest.json")
+            exclude_id = safe_snapshot_id(observation_time(current_meta))
+        hydrate(output, args.base_url, args.max_snapshots, exclude_id=exclude_id)
     return 0
 
 
