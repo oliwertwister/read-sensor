@@ -10,6 +10,7 @@ const MODEL_CUBE_READ_PREFIX = "/api/v1/model-cube/";
 const MODEL_CUBE_UPLOAD_PREFIX = "/api/v1/model-cube-upload/";
 const MODEL_CUBE_AUTH_CHECK = "/api/v1/model-cube-upload-auth-check";
 const MODEL_CUBE_PREFLIGHT = "/api/v1/model-cube-upload-preflight";
+const MODEL_RUNS_PATH = "/api/v1/model-runs";
 const MODEL_CUBE_KEY_PREFIX = "icon-eu/";
 const MAX_MODEL_KEY_LENGTH = 512;
 const MAX_MODEL_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -584,6 +585,66 @@ function modelObjectHeaders(request, env, object, relative, ranged = false) {
   return headers;
 }
 
+function modelRunsLimit(value) {
+  if (value === null) return 8;
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 16) return null;
+  return parsed;
+}
+
+function modelRunPrefixId(prefix) {
+  const match = /^icon-eu\/runs\/(\d{8}T\d{6}Z)\/$/.exec(prefix || "");
+  return match?.[1] || null;
+}
+
+async function modelRunsManifest(request, env, url) {
+  if (!env.MODEL_CUBE) return json(request, env, { error: "model_cube_unavailable" }, 503);
+  const limit = modelRunsLimit(url.searchParams.get("limit"));
+  if (limit === null) return json(request, env, { error: "invalid_query" }, 400);
+
+  const listed = await env.MODEL_CUBE.list({
+    prefix: `${MODEL_CUBE_KEY_PREFIX}runs/`,
+    delimiter: "/",
+    limit: 1000,
+  });
+  const runIds = (listed.delimitedPrefixes || [])
+    .map(modelRunPrefixId)
+    .filter(Boolean)
+    .sort()
+    .reverse()
+    .slice(0, limit);
+
+  const runs = [];
+  for (const runId of runIds) {
+    const relativeManifest = `runs/${runId}/cube-manifest.json`;
+    const object = await env.MODEL_CUBE.get(MODEL_CUBE_KEY_PREFIX + relativeManifest);
+    if (!object) continue;
+    try {
+      const manifest = JSON.parse(await new Response(object.body).text());
+      runs.push({
+        id: runId,
+        run_at: manifest.run_at || null,
+        forecast_hours: manifest.forecast_hours || [],
+        valid_times: manifest.valid_times || [],
+        shape: manifest.shape || null,
+        variables: manifest.variables || [],
+        cube_url: `runs/${runId}/cube.zarr`,
+        manifest_url: relativeManifest,
+      });
+    } catch {
+      // Ignore malformed/incomplete manifests; immutable cube objects remain untouched.
+    }
+  }
+
+  return json(request, env, {
+    version: 1,
+    generated_at: new Date().toISOString(),
+    count: runs.length,
+    runs,
+  }, 200, { "cache-control": "public, max-age=60, must-revalidate" });
+}
+
 async function modelCubeRead(request, env, url) {
   if (!env.MODEL_CUBE) return json(request, env, { error: "model_cube_unavailable" }, 503);
   const relative = modelCubeRelativePath(url.pathname, MODEL_CUBE_READ_PREFIX);
@@ -863,6 +924,9 @@ export default {
       }
       if (url.pathname === "/api/v1/devices" && request.method === "GET") {
         return await devices(request, env);
+      }
+      if (url.pathname === MODEL_RUNS_PATH && request.method === "GET") {
+        return await modelRunsManifest(request, env, url);
       }
       if (url.pathname.startsWith(MODEL_CUBE_READ_PREFIX) && (request.method === "GET" || request.method === "HEAD")) {
         return await modelCubeRead(request, env, url);

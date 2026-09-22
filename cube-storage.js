@@ -18,6 +18,18 @@
     return libraryPromise;
   }
 
+  async function listRuns(limit = 8) {
+    const bounded = Number(limit);
+    if (!Number.isInteger(bounded) || bounded < 1 || bounded > 16) {
+      throw new RangeError("Model run limit must be an integer from 1 to 16");
+    }
+    if (!API_BASE) return { version: 1, count: 0, runs: [], reason: "api_base_missing" };
+    const response = await fetch(`${API_BASE}/api/v1/model-runs?limit=${bounded}`, { cache: "no-store" });
+    if (response.status === 503) return { version: 1, count: 0, runs: [], reason: "cube_not_published" };
+    if (!response.ok) throw new Error(`Model runs HTTP ${response.status}`);
+    return response.json();
+  }
+
   async function connect() {
     if (statePromise) return statePromise;
     statePromise = (async () => {
@@ -36,5 +48,5 @@
     return statePromise;
   }
 
-  window.ReadSensorCube = Object.freeze({ connect, readPrefix: READ_PREFIX });
+  window.ReadSensorCube = Object.freeze({ connect, listRuns, readPrefix: READ_PREFIX });
 })();

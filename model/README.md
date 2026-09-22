@@ -89,6 +89,10 @@ The static image is a compact overview. The interactive Leaflet layers remain th
 
 The build also writes a Zarr v3 cube for the bounded time/pressure dimensions. Production publishing uses the Worker R2 gateway and a short-lived GitHub OIDC identity; the cube is intentionally excluded from the GitHub Pages artifact.
 
+Immutable standard ICON runs already remain under `icon-eu/runs/<UTC run>/` until the bucket lifecycle expires them. The Worker exposes `GET /api/v1/model-runs?limit=N` (1–16) as a compact read-only index of those existing runs. It discovers run prefixes with one delimiter-based R2 listing and reads only the small `cube-manifest.json` for the selected recent runs; it does not scan or duplicate the hundreds of Zarr objects inside each cube.
+
+The browser connector exposes this as `ReadSensorCube.listRuns()`. Merely listing or selecting an existing run adds R2 read operations but **no R2 storage**. The current cube contents and per-run storage cap are unchanged.
+
 See the runbook for production upload behavior and credentials. Storage limits and retention are enforced by the uploader/Worker rather than by this README.
 
 ## Interpretation notes

@@ -81,6 +81,20 @@ class R2Bucket {
     const entries = [...this.objects.entries()]
       .filter(([key]) => key.startsWith(prefix))
       .sort(([a], [b]) => a.localeCompare(b));
+    if (options.delimiter) {
+      const prefixes = new Set();
+      const objects = [];
+      for (const [key, stored] of entries) {
+        const remainder = key.slice(prefix.length);
+        const splitAt = remainder.indexOf(options.delimiter);
+        if (splitAt >= 0) {
+          prefixes.add(prefix + remainder.slice(0, splitAt + 1));
+        } else {
+          objects.push({ key, size: stored.bytes.byteLength });
+        }
+      }
+      return { objects, delimitedPrefixes: [...prefixes].sort(), truncated: false };
+    }
     const limit = options.limit || 1000;
     const start = options.cursor ? Number(options.cursor) : 0;
     const page = entries.slice(start, start + limit);
@@ -384,6 +398,51 @@ test("model cube upload and ranged reads use the R2 gateway", async () => {
   }), cubeEnv);
   assert.equal(head.status, 200);
   assert.equal(Number(head.headers.get("content-length")), bytes.byteLength);
+});
+
+test("model runs manifest lists recent immutable R2 runs without scanning cube objects", async () => {
+  const r2 = new R2Bucket();
+  const cubeEnv = { ...env, MODEL_CUBE: r2, MODEL_UPLOAD_TOKEN };
+  const base = new Date();
+  base.setUTCMinutes(0, 0, 0);
+  base.setUTCHours(Math.floor(base.getUTCHours() / 6) * 6);
+  const ids = [12, 6, 0].map((hoursAgo) => {
+    const date = new Date(base.getTime() - hoursAgo * 60 * 60 * 1000);
+    return date.toISOString().replace(/[-:]/g, "").replace(/\.000Z$/, "Z");
+  });
+
+  for (const [index, id] of ids.entries()) {
+    const runAt = `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}T${id.slice(9, 11)}:00:00Z`;
+    const manifest = {
+      version: 1,
+      run_at: runAt,
+      forecast_hours: [index, index + 1, index + 2],
+      valid_times: [runAt],
+      shape: { time: 3, latitude: 649, longitude: 1097, pressure_level: 3 },
+      variables: ["temperature_2m", "pmsl"],
+    };
+    await r2.put(
+      `icon-eu/runs/${id}/cube-manifest.json`,
+      JSON.stringify(manifest),
+      { httpMetadata: { contentType: "application/json" } },
+    );
+    await r2.put(`icon-eu/runs/${id}/cube.zarr/c/0`, new Uint8Array([index]));
+  }
+
+  const response = await worker.fetch(request("/api/v1/model-runs?limit=2", {
+    headers: { origin: "https://oliwertwister.github.io" },
+  }), cubeEnv);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("access-control-allow-origin"), "https://oliwertwister.github.io");
+  const payload = await response.json();
+  assert.equal(payload.count, 2);
+  assert.deepEqual(payload.runs.map((run) => run.id), [ids[2], ids[1]]);
+  assert.equal(payload.runs[0].cube_url, `runs/${ids[2]}/cube.zarr`);
+  assert.equal(payload.runs[0].manifest_url, `runs/${ids[2]}/cube-manifest.json`);
+  assert.deepEqual(payload.runs[0].variables, ["temperature_2m", "pmsl"]);
+
+  const invalid = await worker.fetch(request("/api/v1/model-runs?limit=99"), cubeEnv);
+  assert.equal(invalid.status, 400);
 });
 
 test("model cube storage preflight enforces the project safety ceiling", async () => {
