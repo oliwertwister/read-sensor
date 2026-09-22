@@ -1,129 +1,101 @@
 # Satellite pipeline
 
 - **Live dashboard:** https://oliwertwister.github.io/read-sensor/
-- **Repository:** https://github.com/oliwertwister/read-sensor
+- **Operations/setup:** ../docs/RUNBOOK.md
+- **Production workflow:** ../.github/workflows/pages.yml
 
-The satellite tab is generated independently of the sensor computer. Cloudflare Cron dispatches the GitHub Pages workflow four times per hour. A GitHub-hosted Linux runner executes `satellite/render_satellite.py`, writes static WebP/JSON outputs, and GitHub Pages deploys those outputs with the rest of the dashboard.
+This document describes the satellite implementation only. Account creation, secrets, full-project run commands and deployment verification live in the runbook.
 
-## What is actually implemented today
+## Current architecture
 
-There are now two satellite backends.
+Each production build renders a resilient EUMETView WMS baseline first, then attempts a credential-gated native MTG/FCI Level-1c upgrade.
 
-### Always-on WMS baseline
+### 1. WMS baseline
 
-satellite/render_satellite.py uses EUMETSAT EUMETView WMS to obtain the MTG/FCI Geo Colour RGB and IR 10.5 µm visual products. It publishes clean georeferenced WebP layers plus decorated versions with the WGS84 grid, Natural Earth Admin-0 boundaries and Berlin marker.
+`render_satellite.py` requests EUMETSAT EUMETView display imagery for Geo Colour and IR 10.5 µm. It publishes:
 
-### Credential-gated native FCI/Satpy upgrade
+- raw georeferenced WebP overlays;
+- decorated WebP versions with WGS84 grid, Natural Earth Admin-0 boundaries and the Berlin marker;
+- `latest.json` metadata.
 
-satellite/render_satpy.py runs after the WMS renderer only when EUMETSAT_CONSUMER_KEY and EUMETSAT_CONSUMER_SECRET are configured. It downloads a bounded recent subset from collection EO:EUM:DAT:0662 with EUMDAC, currently requests coverage quarter Q4, uses a 75-minute default lag and a three-hour search window, then reads the files with Satpy reader fci_l1c_nc.
+This path requires no EUMETSAT Data Store credential and remains the display fallback when the native path cannot complete.
 
-The native path loads natural_color and calibrated ir_105, resamples onto a 0.05 degree regular Europe grid, and writes the same compatible geocolour and IR WebP files plus ir105-bt.f32.gz, a queryable Float32 brightness-temperature grid in kelvin.
+### 2. Native FCI / Satpy upgrade
 
-Native metadata is replaced atomically only after successful processing. Authentication, entitlement, dependency, download, read or resampling failures emit a warning and keep the already-rendered WMS products, so Satpy cannot make the normal Pages deployment less available.
+`render_satpy.py` activates only when `EUMETSAT_CONSUMER_KEY` and `EUMETSAT_CONSUMER_SECRET` are available. It downloads the most recent bounded Q4 subset from collection `EO:EUM:DAT:0662`, currently with:
 
-## Critical limitation of the WMS approach
+- reader: `fci_l1c_nc`;
+- target grid: regular WGS84 Europe grid at 0.05°;
+- default source lag: 75 minutes;
+- search window: 180 minutes;
+- expected Q4 NetCDF chunks: 13.
 
-A WMS PNG is already rendered by the upstream server. We receive display pixels rather than the native FCI channel arrays and associated calibration/geolocation metadata. Consequently the current code cannot reliably perform:
+The native renderer publishes calibrated IR 10.5 µm, a Float32 brightness-temperature grid in kelvin, and Satpy RGB composites.
 
-- native-channel radiance/reflectance/brightness-temperature calculations;
-- custom RGB recipes from arbitrary FCI channels;
-- quantitative cloud-top or surface retrieval algorithms;
-- native geostationary-to-target-grid resampling;
-- uncertainty/quality-flag analysis;
-- physically meaningful interpolation of the original satellite observations.
+Current requested native composites:
 
-Image-space interpolation of the PNG is possible, but it only interpolates rendered pixels. It does not recover missing physical information and should not be described as meteorological interpolation.
+- Airmass RGB;
+- Day Severe Storms RGB;
+- Cloud Phase RGB;
+- Cloud Type RGB;
+- Fire Temperature RGB;
+- Snow RGB;
+- GeoColor;
+- IR Sandwich.
 
-## Native FCI + Satpy operational path
+## Geo Colour and daylight handling
 
-The implemented processing chain is:
+Native `geo_color` is isolated from the shared Satpy scene because it may depend on auxiliary imagery. If it succeeds, it becomes the main Geo Colour layer. If it fails, the already-rendered EUMETView WMS Geo Colour is retained as the 24-hour display product. Only when neither is available does the renderer fall back to native Satpy `natural_color`, which is daylight-only.
 
-    EUMETSAT Data Store / EUMDAC
-        -> recent Q4 FCI Level-1c NetCDF chunks
-        -> Satpy Scene using fci_l1c_nc
-        -> natural_color + calibrated ir_105
-        -> Satpy / pyresample to 0.05 degree Europe grid
-        -> georeferenced WebP layers + IR 10.5 K Float32 grid + metadata
-        -> existing interactive Leaflet catalogue
-        -> GitHub Pages
+Daylight-only RGBs are not flattened to black at night. Alpha from Satpy/Trollimage is preserved, and an additional PyOrbital solar-zenith mask is applied where appropriate: opaque through 78°, fading to transparent by 88°. The frontend receives `daylight_only` and `daylight_coverage_fraction` metadata so unavailable nighttime layers can be disabled explicitly.
 
-EUMETSAT Data Store downloads require registered-user authentication and product entitlement. Near-real-time availability can additionally depend on the applicable licence. Credentials remain GitHub Actions secrets; raw Level-1c chunks live only in an ephemeral temporary directory and are discarded at job end. The default 75-minute lag reduces reliance on immediate-NRT delivery but does not replace account or licence requirements.
+The daylight-only set is currently:
 
-## Where xarray and Dask fit
+- Day Severe Storms;
+- Cloud Phase;
+- Cloud Type;
+- Snow;
+- IR Sandwich.
 
-Satpy datasets are xarray-based and can be Dask-backed. That is useful for lazy loading/chunked operations on native FCI data, but Dask is not automatically an optimisation. On a single GitHub-hosted runner, excessive chunking can create scheduler overhead and memory pressure.
+Airmass and calibrated IR remain useful at night. Fire Temperature is not force-masked by the daylight rule.
 
-For this project the preferred sequence is:
+## Failure isolation
 
-1. select the smallest useful time/channel/geographic subset;
-2. preserve source/native chunking where sensible;
-3. use Satpy/pyresample for the geolocation-aware satellite resampling;
-4. compute only the derived arrays needed for the published images;
-5. discard native input files when the job finishes.
+The WMS result is created first and remains usable if native authentication, entitlement, dependency installation, download, resampling or composite rendering fails. GeoColor is loaded/rendered separately so its auxiliary-data failure cannot abort the other native composites.
 
-Dask becomes more valuable when multiple large NetCDF chunks or channels no longer fit comfortably in memory. The current native path is deliberately bounded and does not introduce a distributed Dask cluster. Satpy may use Dask-backed arrays internally, but the job computes only the publication products and discards raw inputs afterward.
+Raw FCI Level-1c chunks exist only in the ephemeral build workspace and are discarded at job end.
 
-## Numerical weather models: separate from Satpy
+## Why WMS and native FCI are different
 
-Isobars and isotherms should normally come from a numerical weather prediction model, not from an FCI RGB image. DWD publishes ICON-EU fields as GRIB2, including 2 m temperature (`t_2m`) and mean-sea-level pressure (`pmsl`). A suitable model pipeline is:
+EUMETView WMS returns rendered display pixels. It does not expose the original channel arrays, calibration or quality metadata, so it cannot support trustworthy radiance/reflectance/brightness-temperature calculations or custom native-channel RGB recipes.
 
-```text
-DWD ICON-EU GRIB2
-        ↓
-ecCodes / cfgrib
-        ↓
-xarray Dataset
-        ↓
-subset / unit conversion / optional interpolation
-        ↓
-Matplotlib + Cartopy contours
-        ↓
-WebP/PNG or compact vector/JSON output
-```
+The Satpy path works from Level-1c data and can therefore provide calibrated arrays, physically meaningful resampling and derived composites. Image interpolation of a WMS product must not be described as recovery of native meteorological information.
 
-Examples:
+## Compute policy
 
-- **isobars:** contours of `pmsl`, typically converted Pa → hPa before plotting;
-- **isotherms:** contours of `t_2m`, typically converted K → degrees_celsius;
-- **upper-air charts:** pressure-level temperature, geopotential, relative humidity, and wind where available;
-- **combined products:** satellite imagery as the raster background with independently computed ICON-EU isobars/isotherms overlaid.
+The satellite job deliberately stays bounded:
 
-For ICON-EU regular-lat/lon products, Matplotlib can contour the native grid directly. Interpolation is needed only when aligning multiple grids, producing a different target grid, or sampling arbitrary locations. We should avoid smoothing that visually implies resolution the model does not contain.
+1. select one recent product and only the required Q4 chunks;
+2. resample once to the project Europe grid;
+3. publish compact WebP/JSON/Float32 derivatives;
+4. discard original NetCDF input.
 
-## What is realistic on the zero-cost architecture
+Satpy arrays may be Dask-backed, but the current FCI graph is materialized with the synchronous scheduler because concurrent netCDF-C access has proven unsafe in this pipeline. A distributed Dask cluster is not part of the architecture.
 
-The public repository can use standard GitHub-hosted Actions runners without per-minute charges. `ubuntu-latest` currently provides a multi-core VM with enough RAM for modest subsetted geospatial processing. The limiting resources are more practically **network transfer, transient disk, memory peaks, workflow duration, and upstream service/licence constraints** than Python itself.
+## Key outputs
 
-Reasonable scheduled products:
+- `satellite/output/latest.json` — backend/product metadata and warnings;
+- `geocolour-raw.webp`, `geocolour.webp` — current continuous Geo Colour display/fallback;
+- `ir105-raw.webp`, `ir105.webp` — IR 10.5 µm display;
+- `ir105-bt.f32.gz` — calibrated query grid;
+- one raw/decorated WebP pair for each successfully rendered derived composite.
 
-- latest FCI Europe composite from a small subset of channels;
-- one or two resampled IR/visible channels;
-- ICON-EU `pmsl` isobars + `t_2m` isotherms for the current forecast step;
-- satellite + model overlay;
-- a few selected forecast lead times;
-- compact derived metadata/vector contours.
-
-Poor fits for the free scheduled runner:
-
-- continuously archiving complete FCI full-disc Level-1c cycles;
-- downloading all FCI bands every 10 minutes;
-- keeping full ICON-EU runs or large multi-run ensembles in the repository;
-- large Dask workflows that expect a persistent distributed cluster;
-- publishing original licensed numerical satellite data through GitHub Pages.
-
-The best design remains: **download the minimum → process once → publish small derived artifacts → discard raw inputs**.
+Exact persistent footprint per composite is recorded in metadata and surfaced in the Data Monitor.
 
 ## References
 
-1. EUMETSAT MTG resources: https://user.eumetsat.int/data/satellites/meteosat-third-generation/resources
-2. EUMETSAT MTG operations/data access: https://user.eumetsat.int/resources/user-guides/mtg-in-operations
-3. EUMETSAT Data Store guide: https://user.eumetsat.int/resources/user-guides/introductory-data-store-user-guide
-4. EUMDAC guide: https://user.eumetsat.int/resources/user-guides/eumetsat-data-access-client-eumdac-guide
-5. Satpy FCI L1c reader: https://satpy.readthedocs.io/en/latest/api/satpy.readers.fci_l1c_nc.html
-6. Satpy resampling: https://satpy.readthedocs.io/en/latest/resample.html
-7. xarray + Dask: https://docs.xarray.dev/en/latest/user-guide/dask.html
-8. cfgrib / ecCodes xarray engine: https://github.com/ecmwf/cfgrib
-9. DWD ICON-EU GRIB2: https://opendata.dwd.de/weather/nwp/icon-eu/grib/
-10. DWD ICON-EU 2 m temperature: https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/t_2m/
-11. DWD ICON-EU mean-sea-level pressure: https://opendata.dwd.de/weather/nwp/icon-eu/grib/00/pmsl/
-12. GitHub Actions runner reference: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+- EUMETSAT Data Store: https://data.eumetsat.int/
+- EUMDAC guide: https://user.eumetsat.int/resources/user-guides/eumetsat-data-access-client-eumdac-guide
+- Satpy FCI L1c reader: https://satpy.readthedocs.io/en/latest/api/satpy.readers.fci_l1c_nc.html
+- Satpy resampling: https://satpy.readthedocs.io/en/latest/resample.html
+- PyOrbital: https://pyorbital.readthedocs.io/
