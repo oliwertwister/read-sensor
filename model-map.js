@@ -19,6 +19,12 @@
     animationSerial: 0,
     prefetchedSteps: new Set(),
     cubeState: null,
+    archiveRuns: [],
+    archiveMode: false,
+    archiveRun: null,
+    archiveTimeIndex: 0,
+    archiveGrid: null,
+    archiveSerial: 0,
     assetVersion: null,
     initializing: null,
   };
@@ -350,6 +356,22 @@
     const list = iconEl("iconActiveLayersList");
     const count = iconEl("iconActiveLayersCount");
     if (!list || !count || !iconModelState.meta) return;
+    if (iconModelState.archiveMode) {
+      count.textContent = iconModelState.archiveGrid ? "1" : "0";
+      list.replaceChildren();
+      const item = document.createElement("div");
+      item.className = "icon-active-layer-item";
+      const title = document.createElement("strong");
+      title.textContent = "2 m temperature · R2 archive query";
+      const description = document.createElement("small");
+      const validAt = iconModelState.archiveRun?.valid_times?.[iconModelState.archiveTimeIndex];
+      description.textContent = validAt
+        ? `Numerical Zarr field · valid ${compactModelTime(validAt)}`
+        : "Loading archived numerical field…";
+      item.append(title, description);
+      list.append(item);
+      return;
+    }
     const active = iconModelState.meta.layers.filter(layerIsVisible);
     count.textContent = String(active.length);
     list.replaceChildren();
@@ -803,11 +825,57 @@
     setMapStatus("All layers unchecked", "ok");
   }
 
+  function setRenderedLayersVisible(visible) {
+    for (const def of iconModelState.meta?.layers || []) {
+      const instance = iconModelState.instances.get(def.id);
+      if (!instance || !iconModelState.map) continue;
+      if (!visible && iconModelState.map.hasLayer(instance)) {
+        iconModelState.map.removeLayer(instance);
+      } else if (visible && layerEnabled(def) && !iconModelState.map.hasLayer(instance)) {
+        instance.addTo(iconModelState.map);
+        applyOpacity(instance, def);
+      }
+    }
+  }
+
+  function setArchiveUi(active) {
+    const notice = iconEl("iconArchiveNotice");
+    if (notice) notice.hidden = !active;
+    document.querySelector(".icon-layer-panel")?.classList.toggle("is-archive-mode", active);
+    const pressure = document.querySelector(".icon-pressure-strip");
+    if (pressure) pressure.classList.toggle("is-archive-mode", active);
+  }
+
+  function archiveBounds(grid) {
+    const lat = grid.latitude;
+    const lon = grid.longitude;
+    const latStep = lat.count > 1 ? (lat.last - lat.first) / (lat.count - 1) : 0;
+    const lonStep = lon.count > 1 ? (lon.last - lon.first) / (lon.count - 1) : 0;
+    return [
+      [Math.min(lat.first, lat.last) - Math.abs(latStep) / 2, Math.min(lon.first, lon.last) - Math.abs(lonStep) / 2],
+      [Math.max(lat.first, lat.last) + Math.abs(latStep) / 2, Math.max(lon.first, lon.last) + Math.abs(lonStep) / 2],
+    ];
+  }
+
   function updateAnimationControls() {
     const timeline = iconModelState.timeline;
     const play = iconEl("iconAnimPlay");
     const range = iconEl("iconAnimRange");
     const label = iconEl("iconAnimTime");
+    if (iconModelState.archiveMode) {
+      if (play) {
+        play.disabled = true;
+        play.textContent = "▶ Play";
+      }
+      if (range) {
+        range.disabled = true;
+        range.value = String(iconModelState.archiveTimeIndex);
+      }
+      const valid = iconModelState.archiveRun?.valid_times?.[iconModelState.archiveTimeIndex];
+      const lead = iconModelState.archiveRun?.forecast_hours?.[iconModelState.archiveTimeIndex];
+      if (label) label.textContent = valid ? `+${lead ?? "—"} h · ${compactModelTime(valid)}` : "—";
+      return;
+    }
     if (!timeline?.steps?.length) {
       if (play) play.disabled = true;
       if (range) range.disabled = true;
@@ -930,6 +998,156 @@
     });
     select.value = String(iconModelState.currentStepIndex);
     updateAnimationControls();
+  }
+
+  function populateModelRunControl() {
+    const select = iconEl("iconModelRun");
+    if (!select || !iconModelState.meta) return;
+    const currentRunAt = iconModelState.meta.run_at;
+    select.replaceChildren();
+    const current = document.createElement("option");
+    current.value = "pages-current";
+    current.textContent = `Current rendered · ${compactModelTime(currentRunAt)}`;
+    select.append(current);
+    for (const run of iconModelState.archiveRuns) {
+      if (!run?.id || run.run_at === currentRunAt) continue;
+      const option = document.createElement("option");
+      option.value = run.id;
+      option.textContent = compactModelTime(run.run_at);
+      select.append(option);
+    }
+    select.value = iconModelState.archiveMode ? iconModelState.archiveRun?.id || "pages-current" : "pages-current";
+  }
+
+  function populateArchiveTimeControl(run) {
+    const select = iconEl("iconForecastTime");
+    if (!select) return;
+    select.replaceChildren();
+    const validTimes = run?.valid_times || [];
+    const leads = run?.forecast_hours || [];
+    validTimes.forEach((validAt, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `+${leads[index] ?? "—"} h · ${compactModelTime(validAt)}`;
+      select.append(option);
+    });
+    select.value = String(iconModelState.archiveTimeIndex);
+    select.disabled = !validTimes.length;
+    updateAnimationControls();
+  }
+
+  function clearArchiveGrid() {
+    iconModelState.archiveGrid = null;
+  }
+
+  function updateArchiveMetaCards(run, grid) {
+    if (iconEl("iconMapRun")) iconEl("iconMapRun").textContent = modelTime(run?.run_at);
+    if (iconEl("iconMapSatellite")) iconEl("iconMapSatellite").textContent = "— · not archived";
+    if (iconEl("iconMapGrid") && grid) {
+      const step = grid.longitude.count > 1
+        ? Math.abs((grid.longitude.last - grid.longitude.first) / (grid.longitude.count - 1))
+        : NaN;
+      iconEl("iconMapGrid").textContent = Number.isFinite(step) ? `${step.toFixed(4)}°` : "—";
+    }
+  }
+
+  async function prepareArchiveTime(timeIndex) {
+    const run = iconModelState.archiveRun;
+    if (!run || !window.ReadSensorCube?.readGrid) return;
+    const validAt = run.valid_times?.[timeIndex];
+    const lead = run.forecast_hours?.[timeIndex];
+    if (!validAt) return;
+    const serial = ++iconModelState.archiveSerial;
+    const timeSelect = iconEl("iconForecastTime");
+    const runSelect = iconEl("iconModelRun");
+    if (timeSelect) timeSelect.disabled = true;
+    if (runSelect) runSelect.disabled = true;
+    setMapStatus(`Opening archived +${lead ?? "—"} h query mode…`);
+    try {
+      const grid = await window.ReadSensorCube.readGrid(run.cube_url);
+      if (serial !== iconModelState.archiveSerial || !iconModelState.archiveMode) return;
+      const latStep = grid.latitude.count > 1
+        ? (grid.latitude.last - grid.latitude.first) / (grid.latitude.count - 1)
+        : 0;
+      const lonStep = grid.longitude.count > 1
+        ? (grid.longitude.last - grid.longitude.first) / (grid.longitude.count - 1)
+        : 0;
+      iconModelState.archiveGrid = {
+        latitude: grid.latitude,
+        longitude: grid.longitude,
+        lat_start: grid.latitude.first,
+        lat_step: latStep,
+        lon_start: grid.longitude.first,
+        lon_step: lonStep,
+        shape: [grid.latitude.count, grid.longitude.count],
+        bounds: archiveBounds(grid),
+      };
+      iconModelState.archiveTimeIndex = timeIndex;
+      if (timeSelect) timeSelect.value = String(timeIndex);
+      updateArchiveMetaCards(run, grid);
+      updateAnimationControls();
+      updateActiveLayersSummary();
+      setMapStatus(`R2 archive query · 2 m temperature · +${lead ?? "—"} h · ${compactModelTime(validAt)}`, "ok");
+    } catch (error) {
+      console.error("icon_archive_prepare_failed", error);
+      setMapStatus("Could not open archived model run", "warning");
+    } finally {
+      if (timeSelect) timeSelect.disabled = false;
+      if (runSelect) runSelect.disabled = false;
+    }
+  }
+
+  async function enterArchiveRun(runId) {
+    const run = iconModelState.archiveRuns.find((item) => item.id === runId);
+    if (!run) return;
+    stopAnimation();
+    captureLayerPreferences();
+    setRenderedLayersVisible(false);
+    clearArchiveGrid();
+    iconModelState.archiveMode = true;
+    iconModelState.archiveRun = run;
+    iconModelState.archiveTimeIndex = Math.min(1, Math.max(0, (run.valid_times?.length || 1) - 1));
+    setArchiveUi(true);
+    populateModelRunControl();
+    populateArchiveTimeControl(run);
+    updateActiveLayersSummary();
+    await prepareArchiveTime(iconModelState.archiveTimeIndex);
+  }
+
+  function exitArchiveMode() {
+    if (!iconModelState.archiveMode) return;
+    iconModelState.archiveSerial += 1;
+    clearArchiveGrid();
+    iconModelState.archiveMode = false;
+    iconModelState.archiveRun = null;
+    iconModelState.archiveTimeIndex = 0;
+    setArchiveUi(false);
+    populateModelRunControl();
+    populateForecastTimeControl();
+    updateModelMetaCards();
+    setRenderedLayersVisible(true);
+    updateLayerPanelSummary();
+    updateActiveLayersSummary();
+    setMapStatus("Interactive fields ready", "ok");
+  }
+
+  async function switchArchiveTime(index) {
+    if (!iconModelState.archiveMode || !iconModelState.archiveRun?.valid_times?.[index]) return;
+    if (index === iconModelState.archiveTimeIndex && iconModelState.archiveGrid) return;
+    await prepareArchiveTime(index);
+  }
+
+  async function loadArchiveRuns() {
+    if (!window.ReadSensorCube?.listRuns) return;
+    try {
+      const payload = await window.ReadSensorCube.listRuns(8);
+      iconModelState.archiveRuns = payload.runs || [];
+      populateModelRunControl();
+    } catch (error) {
+      console.warn("model_runs_load_failed", error);
+      iconModelState.archiveRuns = [];
+      populateModelRunControl();
+    }
   }
 
   async function switchForecastTime(index, options = {}) {
@@ -1088,12 +1306,93 @@
       </div>`;
   }
 
+  async function archiveTemperatureAt(lat, lon, sampling) {
+    const grid = iconModelState.archiveGrid;
+    const run = iconModelState.archiveRun;
+    if (!grid || !run || !window.ReadSensorCube?.readWindow2d) return NaN;
+
+    const [height, width] = grid.shape;
+    const fy = (lat - grid.lat_start) / grid.lat_step;
+    const fx = (lon - grid.lon_start) / grid.lon_step;
+    if (fx < 0 || fy < 0 || fx > width - 1 || fy > height - 1) return NaN;
+
+    if (sampling === "nearest") {
+      const y = Math.round(fy);
+      const x = Math.round(fx);
+      const result = await window.ReadSensorCube.readWindow2d(
+        run.cube_url,
+        "temperature_2m",
+        [iconModelState.archiveTimeIndex],
+        y, y + 1, x, x + 1,
+      );
+      return Number(result.data[0]);
+    }
+
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const x1 = Math.min(width - 1, x0 + 1);
+    const y1 = Math.min(height - 1, y0 + 1);
+    const result = await window.ReadSensorCube.readWindow2d(
+      run.cube_url,
+      "temperature_2m",
+      [iconModelState.archiveTimeIndex],
+      y0, y1 + 1, x0, x1 + 1,
+    );
+    const localWidth = result.shape[1];
+    const at = (y, x) => result.data[(y - y0) * localWidth + (x - x0)];
+    const q00 = at(y0, x0);
+    const q10 = at(y0, x1);
+    const q01 = at(y1, x0);
+    const q11 = at(y1, x1);
+    if (![q00, q10, q01, q11].every(Number.isFinite)) {
+      return Number(at(Math.round(fy), Math.round(fx)));
+    }
+    const tx = fx - x0;
+    const ty = fy - y0;
+    return (
+      q00 * (1 - tx) * (1 - ty) +
+      q10 * tx * (1 - ty) +
+      q01 * (1 - tx) * ty +
+      q11 * tx * ty
+    );
+  }
+
   async function queryMapPoint(event) {
     const latlng = event.latlng;
     const popup = L.popup({ maxWidth: 330 })
       .setLatLng(latlng)
       .setContent(popupShell(latlng, '<p class="muted">Reading active numerical fields…</p>'))
       .openOn(iconModelState.map);
+
+    if (iconModelState.archiveMode) {
+      const grid = iconModelState.archiveGrid;
+      if (!grid) {
+        popup.setContent(popupShell(
+          latlng,
+          '<p class="muted">Archived numerical field is still loading.</p>',
+        ));
+        return;
+      }
+      const sampling = iconEl("iconSampling")?.value || "bilinear";
+      const validAt = iconModelState.archiveRun?.valid_times?.[iconModelState.archiveTimeIndex];
+      try {
+        const kelvin = await archiveTemperatureAt(latlng.lat, latlng.lng, sampling);
+        const value = Number.isFinite(kelvin) ? kelvin - 273.15 : NaN;
+        const body = Number.isFinite(value)
+          ? `<table><tr><th>2 m temperature</th><td>${value.toFixed(1)} °C</td></tr></table>
+             <p class="model-query-note">R2 Zarr archive · sampling: ${sampling}</p>
+             <p class="model-query-note">Valid ${modelTime(validAt)}</p>`
+          : '<p class="muted">Point is outside the archived ICON-EU grid.</p>';
+        popup.setContent(popupShell(latlng, body));
+      } catch (error) {
+        console.error("icon_archive_query_failed", error);
+        popup.setContent(popupShell(
+          latlng,
+          '<p class="muted">Could not read the archived numerical value.</p>',
+        ));
+      }
+      return;
+    }
 
     const fields = activeFieldIds();
     if (!fields.length) {
@@ -1171,9 +1470,21 @@
         populateForecastTimeControl();
         populatePressureControl();
         const forecastSelect = iconEl("iconForecastTime");
-        forecastSelect?.addEventListener("change", () => switchForecastTime(Number(forecastSelect.value)));
+        forecastSelect?.addEventListener("change", () => {
+          const index = Number(forecastSelect.value);
+          if (iconModelState.archiveMode) void switchArchiveTime(index);
+          else void switchForecastTime(index);
+        });
+        iconEl("iconModelRun")?.addEventListener("change", (event) => {
+          const runId = event.target.value;
+          if (runId === "pages-current") exitArchiveMode();
+          else void enterArchiveRun(runId);
+        });
         iconEl("iconAnimPlay")?.addEventListener("click", toggleAnimation);
-        iconEl("iconAnimRange")?.addEventListener("change", (event) => switchForecastTime(Number(event.target.value)));
+        iconEl("iconAnimRange")?.addEventListener("change", (event) => {
+          if (iconModelState.archiveMode) return;
+          void switchForecastTime(Number(event.target.value));
+        });
         iconEl("iconAnimSpeed")?.addEventListener("change", () => {
           if (!iconModelState.animationPlaying) return;
           const serial = iconModelState.animationSerial;
@@ -1187,13 +1498,17 @@
         updateActiveLayersSummary();
 
         iconEl("iconMapReset").addEventListener("click", () => {
-          map.fitBounds(iconModelState.meta.bounds, { padding: [8, 8] });
+          const bounds = iconModelState.archiveMode && iconModelState.archiveGrid?.bounds
+            ? iconModelState.archiveGrid.bounds
+            : iconModelState.meta.bounds;
+          map.fitBounds(bounds, { padding: [8, 8] });
         });
         setMapStatus("Interactive fields ready", "ok");
         if (iconModelState.timeline?.steps?.length > 1) {
           void prefetchForecastStep((iconModelState.currentStepIndex + 1) % iconModelState.timeline.steps.length);
         }
         void probeCubeStorage();
+        void loadArchiveRuns();
       } catch (error) {
         console.error("icon_map_init_failed", error);
         setMapStatus("Interactive map unavailable", "error");

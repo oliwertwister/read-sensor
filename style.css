@@ -1740,7 +1740,7 @@ a { color: #58a6ff; }
 /* ICON-EU compact forecast workspace */
 .icon-primary-controls {
   display:grid;
-  grid-template-columns:minmax(230px,300px) minmax(300px,1fr) auto auto;
+  grid-template-columns:minmax(180px,240px) minmax(220px,300px) minmax(280px,1fr) auto auto;
   align-items:end;
   gap:10px;
   margin-bottom:9px;
@@ -1855,6 +1855,21 @@ a { color: #58a6ff; }
   align-self:end;
   min-height:36px;
   color:#c9d1d9;
+}
+.icon-archive-notice {
+  margin:0 0 9px;
+  padding:8px 11px;
+  border:1px solid rgba(56,139,253,.45);
+  border-radius:9px;
+  background:rgba(56,139,253,.08);
+  color:#79c0ff;
+  font-size:.75rem;
+}
+.icon-layer-panel.is-archive-mode,
+.icon-pressure-strip.is-archive-mode {
+  opacity:.5;
+  pointer-events:none;
+  user-select:none;
 }
 .icon-context-line {
   display:flex;
@@ -2062,7 +2077,7 @@ a { color: #58a6ff; }
 }
 /* ICON controls v2: pressure levels, compact metadata and active-layer HUD */
 .icon-primary-controls {
-  grid-template-columns:minmax(250px,300px) minmax(300px,1fr) auto auto;
+  grid-template-columns:minmax(180px,240px) minmax(220px,300px) minmax(280px,1fr) auto auto;
 }
 .icon-pressure-strip {
   grid-column:1 / -1;
@@ -2223,8 +2238,9 @@ a { color: #58a6ff; }
 }
 @media(max-width:1050px){
   .icon-primary-controls {
-    grid-template-columns:minmax(210px,250px) minmax(230px,1fr) auto auto;
+    grid-template-columns:minmax(170px,220px) minmax(200px,1fr) auto auto;
   }
+  .icon-primary-controls .icon-animation-controls { grid-column:1 / -1; }
 }
 @media(max-width:900px){
   .icon-active-layers { width:min(250px,44%); }

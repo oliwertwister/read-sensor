@@ -25,6 +25,26 @@ async function handle(message) {
     };
   }
 
+  if (message.op === "window2d") {
+    const result = await cube.window2d(
+      message.variable,
+      message.prefix || [],
+      message.yStart,
+      message.yStop,
+      message.xStart,
+      message.xStop,
+    );
+    const copy = new Float32Array(result.data.length);
+    copy.set(result.data);
+    return {
+      id: message.id,
+      ok: true,
+      shape: result.shape,
+      data: copy.buffer,
+      transfer: [copy.buffer],
+    };
+  }
+
   if (message.op === "grid") {
     const latitude = await cube.openArray("latitude");
     const longitude = await cube.openArray("longitude");

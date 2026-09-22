@@ -93,6 +93,10 @@ Immutable standard ICON runs already remain under `icon-eu/runs/<UTC run>/` unti
 
 The browser connector exposes this as `ReadSensorCube.listRuns()`. Merely listing or selecting an existing run adds R2 read operations but **no R2 storage**. The current cube contents and per-run storage cap are unchanged.
 
+The model map now exposes those retained runs through an **ICON run** selector. The current rendered run continues to use the full Pages layer catalogue. Selecting an older R2 run switches to a deliberately narrower archive-query mode: its three retained valid times are shown, the Pages-only layer controls are disabled, and map clicks read a small Zarr window for **2 m temperature** directly from that historical cube. Blosc decoding runs in a same-origin Web Worker so the main page CSP does not need `unsafe-eval`; no recompressed copy of the cube is stored.
+
+This first archive mode intentionally does not decode the complete 649×1097 field merely to draw a background raster. Small spatial reads are fast and preserve the storage advantage of the existing Blosc cubes; additional historical variables can be added through the same windowed query path.
+
 See the runbook for production upload behavior and credentials. Storage limits and retention are enforced by the uploader/Worker rather than by this README.
 
 ## Interpretation notes

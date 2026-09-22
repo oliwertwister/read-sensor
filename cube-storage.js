@@ -82,6 +82,16 @@
     };
   }
 
+  async function readWindow2d(cubeRelative, variable, prefix, yStart, yStop, xStart, xStop) {
+    const response = await workerRequest("window2d", cubeRelative, {
+      variable, prefix, yStart, yStop, xStart, xStop,
+    });
+    return {
+      shape: response.shape,
+      data: new Float32Array(response.data),
+    };
+  }
+
   async function readGrid(cubeRelative) {
     const response = await workerRequest("grid", cubeRelative);
     return {
@@ -94,6 +104,7 @@
     connect,
     listRuns,
     readField2d,
+    readWindow2d,
     readGrid,
     readPrefix: READ_PREFIX,
   });

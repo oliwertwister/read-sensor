@@ -101,6 +101,12 @@
           </div>
 
           <div class="icon-primary-controls">
+            <label class="icon-forecast-control" for="iconModelRun">
+              <span>ICON run</span>
+              <select id="iconModelRun" aria-label="ICON-EU model run">
+                <option value="pages-current">Current rendered run</option>
+              </select>
+            </label>
             <label class="icon-forecast-control" for="iconForecastTime">
               <span>Forecast time</span>
               <select id="iconForecastTime" aria-label="ICON-EU forecast valid time"><option>Loading…</option></select>
@@ -124,6 +130,10 @@
               <div id="iconPressureLevels" class="icon-pressure-levels"></div>
               <select id="iconPressureLevel" aria-label="Pressure level" hidden><option>Loading…</option></select>
             </div>
+          </div>
+
+          <div id="iconArchiveNotice" class="icon-archive-notice" hidden>
+            R2 archive query mode · choose a valid time, then click the map to read 2 m temperature from the retained Zarr cube.
           </div>
 
           <div class="icon-meta-pills" aria-label="Forecast metadata">
@@ -499,7 +509,7 @@
     <script src="geometry-ui.js?v=geometry-4"></script>
     <script src="app.js?v=diagnostics-monitor-1"></script>
     <script src="cube-storage.js?v=zarr-r2-worker-3"></script>
-    <script src="model-map.js?v=expanded-diagnostics-1"></script>
+    <script src="model-map.js?v=r2-archive-1"></script>
     <script src="data-monitor.js?v=monitor-2"></script>
     <script src="synop.js?v=synop-live-temp-1"></script>
   </body>
