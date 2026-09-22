@@ -169,7 +169,7 @@ jobs:
       - name: Stage public files
         run: |
           mkdir _site
-          cp index.html app.js model-map.js data-monitor.js cube-storage.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
+          cp index.html app.js model-map.js data-monitor.js cube-storage.js cube-reader-worker.js synop.js config.js style.css geometry-loader.js geometry-ui.js rar-worker.js _site/
           cp -R vendor _site/
           mkdir -p _site/satellite
           cp -R satellite/output/. _site/satellite/
