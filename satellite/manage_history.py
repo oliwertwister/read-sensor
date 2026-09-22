@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+from monitor.telemetry import record_transfer
 
 DEFAULT_MAX_SNAPSHOTS = 4
 INDEX_RELATIVE = Path("history/index.json")
@@ -122,8 +125,17 @@ def archive(output: Path, max_snapshots: int) -> dict:
 
 def fetch_bytes(url: str, timeout: int = 30) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "read-sensor-satellite-history/1.0"})
+    started = time.perf_counter()
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return response.read()
+        payload = response.read()
+    record_transfer(
+        url,
+        len(payload),
+        time.perf_counter() - started,
+        source="read-sensor GitHub Pages",
+        category="satellite history hydration",
+    )
+    return payload
 
 
 def hydrate(output: Path, base_url: str, max_snapshots: int) -> list[dict]:
