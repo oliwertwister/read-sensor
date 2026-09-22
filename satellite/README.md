@@ -88,6 +88,8 @@ The published site retains **4 complete satellite snapshots total**: the current
 
 The index is `satellite/history/index.json`; snapshot directories use UTC IDs such as `20260922T003000Z/`. A snapshot contains every final top-level satellite artifact from that run, including metadata, raw/decorated WebP products and the calibrated IR query grid when available. Repeated builds for the same observation replace rather than duplicate that snapshot.
 
+The Satellite tab reads this index and exposes a timestamp selector for the retained observations. Product selection remains independent of time selection; daylight-only RGBs are disabled when the selected snapshot has no daylight coverage.
+
 The Data Monitor reports both snapshot count and total retained history bytes, and the normal Pages 380 MiB planning target / 500 MiB hard guard still includes the history.
 
 ## Key outputs

@@ -237,6 +237,15 @@
           <div><h2>Meteosat · Europe</h2><p class="muted">MTG-I · FCI · latest autonomous cloud imagery</p></div>
           <div id="satelliteFreshness" class="satellite-freshness">Waiting for cloud render…</div>
         </div>
+        <div class="satellite-history-bar">
+          <label for="satelliteSnapshotSelect">
+            <span>Observation</span>
+            <select id="satelliteSnapshotSelect" disabled>
+              <option value="latest">Latest</option>
+            </select>
+          </label>
+          <small id="satelliteHistoryStatus" class="muted">Loading retained snapshots…</small>
+        </div>
         <div class="satellite-toolbar">
           <div id="satelliteProductButtons" class="satellite-products" role="group" aria-label="Satellite product">
             <button type="button" data-sat-product="geocolour" class="active">Geo Colour</button>

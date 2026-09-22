@@ -1209,6 +1209,9 @@ function initIconCharts() {
 
 let satelliteMeta = null;
 let satelliteProduct = "geocolour";
+let satelliteSnapshot = "latest";
+let satelliteAssetBase = "satellite";
+let satelliteHistoryIndex = { snapshots: [] };
 
 function satelliteTimes(value) {
   if (!value) return { local: "—", utc: "—" };
@@ -1243,6 +1246,12 @@ function updateSatelliteFreshness() {
   }
 
   const ageMin = Math.max(0, Math.floor((Date.now() - observedAt.getTime()) / 60000));
+  if (satelliteSnapshot !== "latest") {
+    freshness.textContent = `Historical snapshot · ${ageMin} min old`;
+    freshness.className = "satellite-freshness historical";
+    freshness.title = "A deliberately selected retained satellite observation.";
+    return;
+  }
   const cadenceMin = Number(satelliteMeta.nominal_cadence_minutes) || 10;
   const staleAfterMin = Math.max(35, cadenceMin * 3);
   const stale = ageMin > staleAfterMin;
@@ -1269,6 +1278,61 @@ function satelliteProductLabel(key, product) {
   return labels[key] || product?.title || key.replaceAll("_", " ");
 }
 
+function satelliteSnapshotLabel(value, prefix = "") {
+  const times = satelliteTimes(value);
+  const label = times.local === "—" ? value || "Unknown time" : times.local;
+  return prefix ? `${prefix} · ${label}` : label;
+}
+
+function buildSatelliteSnapshotSelect() {
+  const select = $("satelliteSnapshotSelect");
+  const status = $("satelliteHistoryStatus");
+  if (!select) return;
+  const snapshots = satelliteHistoryIndex?.snapshots || [];
+  const selectedExists = satelliteSnapshot === "latest"
+    || snapshots.some((item) => item.id === satelliteSnapshot);
+  if (!selectedExists) satelliteSnapshot = "latest";
+
+  select.replaceChildren();
+  const current = snapshots[0];
+  const latestOption = document.createElement("option");
+  latestOption.value = "latest";
+  latestOption.textContent = satelliteSnapshotLabel(current?.observed_at, "Latest");
+  select.append(latestOption);
+
+  for (const item of snapshots.slice(1)) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = satelliteSnapshotLabel(item.observed_at);
+    select.append(option);
+  }
+  select.value = satelliteSnapshot;
+  select.disabled = snapshots.length < 2;
+  if (status) {
+    status.textContent = snapshots.length
+      ? `${snapshots.length} complete snapshot${snapshots.length === 1 ? "" : "s"} retained`
+      : "Current observation only";
+  }
+}
+
+async function loadSatelliteHistoryIndex() {
+  try {
+    const response = await fetch(`satellite/history/index.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    satelliteHistoryIndex = await response.json();
+  } catch (error) {
+    satelliteHistoryIndex = { snapshots: [] };
+    console.info("satellite_history_unavailable", error);
+  }
+  buildSatelliteSnapshotSelect();
+}
+
+function satelliteProductAvailable(product) {
+  if (!product?.daylight_only || product.daylight_coverage_fraction == null) return true;
+  const coverage = Number(product.daylight_coverage_fraction);
+  return !Number.isFinite(coverage) || coverage > 0.001;
+}
+
 function buildSatelliteProductButtons() {
   const container = $("satelliteProductButtons");
   if (!container || !satelliteMeta?.products) return;
@@ -1280,16 +1344,20 @@ function buildSatelliteProductButtons() {
     ...order.filter((key) => satelliteMeta.products[key]),
     ...Object.keys(satelliteMeta.products).filter((key) => !order.includes(key)),
   ];
-  if (!satelliteMeta.products[satelliteProduct]) {
-    satelliteProduct = keys[0] || "geocolour";
+  if (!satelliteMeta.products[satelliteProduct] || !satelliteProductAvailable(satelliteMeta.products[satelliteProduct])) {
+    satelliteProduct = keys.find((key) => satelliteProductAvailable(satelliteMeta.products[key])) || keys[0] || "geocolour";
   }
   container.replaceChildren();
   for (const key of keys) {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.satProduct = key;
-    button.textContent = satelliteProductLabel(key, satelliteMeta.products[key]);
+    const product = satelliteMeta.products[key];
+    const available = satelliteProductAvailable(product);
+    button.textContent = satelliteProductLabel(key, product);
     button.classList.toggle("active", key === satelliteProduct);
+    button.disabled = !available;
+    if (!available) button.title = "Night · no daylight coverage for this observation";
     button.addEventListener("click", () => {
       satelliteProduct = key;
       renderSatellite();
@@ -1306,7 +1374,7 @@ function renderSatellite() {
     button.classList.toggle("active", button.dataset.satProduct === satelliteProduct);
   });
   const version = encodeURIComponent(product.observed_at || satelliteMeta.generated_at || Date.now());
-  $("satelliteImage").src = `satellite/${product.file}?v=${version}`;
+  $("satelliteImage").src = `${satelliteAssetBase}/${product.file}?v=${version}`;
   const platform = satelliteMeta.platform || "Meteosat Third Generation";
   const instrument = satelliteMeta.instrument || "FCI";
   $("satelliteTitle").textContent = `${platform} · ${instrument} · ${product.title}`;
@@ -1324,13 +1392,30 @@ function renderSatellite() {
   updateSatelliteFreshness();
 }
 
+async function loadSatelliteSnapshot(snapshotId) {
+  let metadataPath = "satellite/latest.json";
+  let assetBase = "satellite";
+  if (snapshotId !== "latest") {
+    const item = (satelliteHistoryIndex?.snapshots || []).find((snapshot) => snapshot.id === snapshotId);
+    if (!item) throw new Error(`Unknown satellite snapshot: ${snapshotId}`);
+    metadataPath = `satellite/${item.metadata}`;
+    assetBase = `satellite/history/${item.id}`;
+  }
+
+  const response = await fetch(`${metadataPath}?t=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  satelliteMeta = await response.json();
+  satelliteSnapshot = snapshotId;
+  satelliteAssetBase = assetBase;
+  buildSatelliteSnapshotSelect();
+  buildSatelliteProductButtons();
+  renderSatellite();
+}
+
 async function loadSatellite() {
   try {
-    const response = await fetch(`satellite/latest.json?t=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    satelliteMeta = await response.json();
-    buildSatelliteProductButtons();
-    renderSatellite();
+    await loadSatelliteHistoryIndex();
+    await loadSatelliteSnapshot(satelliteSnapshot);
   } catch (error) {
     console.error("satellite_failed", error);
     $("satelliteFreshness").textContent = "Satellite render unavailable";
@@ -1344,6 +1429,17 @@ function initSatellite() {
       satelliteProduct = button.dataset.satProduct;
       renderSatellite();
     });
+  });
+  $("satelliteSnapshotSelect")?.addEventListener("change", async (event) => {
+    const previous = satelliteSnapshot;
+    try {
+      await loadSatelliteSnapshot(event.target.value);
+    } catch (error) {
+      console.error("satellite_snapshot_failed", error);
+      event.target.value = previous;
+      $("satelliteFreshness").textContent = "Could not load selected snapshot";
+      $("satelliteFreshness").className = "satellite-freshness unavailable";
+    }
   });
   loadSatellite();
 }
