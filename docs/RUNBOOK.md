@@ -145,7 +145,7 @@ After the Worker is deployed and Wrangler is authenticated:
 Check these in order:
 
 1. GitHub Actions run is green.
-2. `satellite/latest.json` reports the intended backend and any composite warnings.
+2. `satellite/latest.json` reports the intended backend and any composite warnings; `satellite/history/index.json` contains no more than four retained complete snapshots.
 3. `model/latest.json` exposes the current interactive layer catalogue.
 4. `monitor/latest.json` reports zero failed processing steps and storage below project ceilings.
 5. The live dashboard loads the expected satellite/model layers without stale-cache artefacts.

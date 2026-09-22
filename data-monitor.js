@@ -83,7 +83,7 @@
     setText("monitorCube", `${bytes(s.cube_bytes)} · ${s.cube_objects ?? 0} objects`);
     setText(
       "monitorProducts",
-      `${s.interactive_fields ?? 0} fields · ${s.interactive_layers ?? 0} layers · ${s.satellite_products ?? 0} satellite`,
+      `${s.interactive_fields ?? 0} fields · ${s.interactive_layers ?? 0} layers · ${s.satellite_products ?? 0} satellite · ${s.satellite_history_snapshots ?? 0} snapshots (${bytes(s.satellite_history_bytes || 0)})`,
     );
     const issueParts = [];
     if (s.failed_processing_steps) issueParts.push(`${s.failed_processing_steps} failed step(s)`);

@@ -116,8 +116,17 @@ jobs:
             fi
           done
 
-      - name: Test Meteosat fallback handling
-        run: PYTHONPATH=.:satellite python satellite/test_render_satellite.py
+      - name: Test Meteosat fallback and history handling
+        run: |
+          PYTHONPATH=.:satellite python satellite/test_render_satellite.py
+          PYTHONPATH=.:satellite python satellite/test_history.py
+
+      - name: Hydrate satellite history
+        run: |
+          python satellite/manage_history.py hydrate \
+            --output satellite/output \
+            --base-url https://oliwertwister.github.io/read-sensor/satellite \
+            --max-snapshots 4
 
       - name: Render latest Meteosat products
         run: python monitor/run_with_metrics.py --name "EUMETView WMS baseline" -- python satellite/render_satellite.py --output satellite/output
@@ -138,6 +147,9 @@ jobs:
           if ! PYTHONPATH=.:satellite python monitor/run_with_metrics.py --name "Native FCI / Satpy" -- python satellite/render_satpy.py --output satellite/output; then
             echo "::warning::Native FCI/Satpy refresh failed; keeping the WMS satellite products."
           fi
+
+      - name: Archive current satellite snapshot
+        run: python satellite/manage_history.py archive --output satellite/output --max-snapshots 4
 
       - name: Render quantitative ICON-EU static and interactive products
         run: python monitor/run_with_metrics.py --name "ICON-EU / MetPy render" -- python model/render_icon_products.py --output model/output --background satellite/output/geocolour.webp

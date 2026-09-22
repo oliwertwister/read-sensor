@@ -82,6 +82,14 @@ The satellite job deliberately stays bounded:
 
 Satpy arrays may be Dask-backed, but the current FCI graph is materialized with the synchronous scheduler because concurrent netCDF-C access has proven unsafe in this pipeline. A distributed Dask cluster is not part of the architecture.
 
+## Snapshot history
+
+The published site retains **4 complete satellite snapshots total**: the current observation plus the three most recent distinct previous observations. GitHub-hosted runners are ephemeral, so each run first hydrates the existing `satellite/history/` index and snapshot files from the deployed Pages site, renders the new final satellite state, archives it by observation timestamp, and prunes older directories.
+
+The index is `satellite/history/index.json`; snapshot directories use UTC IDs such as `20260922T003000Z/`. A snapshot contains every final top-level satellite artifact from that run, including metadata, raw/decorated WebP products and the calibrated IR query grid when available. Repeated builds for the same observation replace rather than duplicate that snapshot.
+
+The Data Monitor reports both snapshot count and total retained history bytes, and the normal Pages 380 MiB planning target / 500 MiB hard guard still includes the history.
+
 ## Key outputs
 
 - `satellite/output/latest.json` — backend/product metadata and warnings;

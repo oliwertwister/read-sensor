@@ -151,6 +151,13 @@ def main() -> int:
     interactive = model_meta.get("interactive") or {}
     satellite_products = satellite_meta.get("products") or {}
     composite_warnings = satellite_meta.get("composite_warnings") or []
+    satellite_history = {}
+    try:
+        satellite_history = json.loads(Path("satellite/output/history/index.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        pass
+    history_snapshots = satellite_history.get("snapshots") or []
+    satellite_history_bytes = sum(int(item.get("bytes") or 0) for item in history_snapshots)
     satellite_product_storage = []
     for key, product in satellite_products.items():
         storage = product.get("storage") or {}
@@ -190,6 +197,8 @@ def main() -> int:
             "interactive_fields": len(interactive.get("fields") or {}),
             "interactive_layers": len(interactive.get("layers") or []),
             "satellite_products": len(satellite_products),
+            "satellite_history_snapshots": len(history_snapshots),
+            "satellite_history_bytes": satellite_history_bytes,
             "satellite_composite_warnings": len(composite_warnings),
             "failed_processing_steps": len(failed_steps),
             "satellite_backend": satellite_meta.get("backend") or "unknown",
