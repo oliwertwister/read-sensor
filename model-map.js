@@ -846,15 +846,32 @@
     if (pressure) pressure.classList.toggle("is-archive-mode", active);
   }
 
-  function archiveBounds(grid) {
-    const lat = grid.latitude;
-    const lon = grid.longitude;
-    const latStep = lat.count > 1 ? (lat.last - lat.first) / (lat.count - 1) : 0;
-    const lonStep = lon.count > 1 ? (lon.last - lon.first) / (lon.count - 1) : 0;
-    return [
-      [Math.min(lat.first, lat.last) - Math.abs(latStep) / 2, Math.min(lon.first, lon.last) - Math.abs(lonStep) / 2],
-      [Math.max(lat.first, lat.last) + Math.abs(latStep) / 2, Math.max(lon.first, lon.last) + Math.abs(lonStep) / 2],
-    ];
+  function gridAxisStep(axis) {
+    return axis.count > 1 ? (axis.last - axis.first) / (axis.count - 1) : 0;
+  }
+
+  function normalizeArchiveGrid(grid) {
+    const latStep = gridAxisStep(grid.latitude);
+    const lonStep = gridAxisStep(grid.longitude);
+    return {
+      latitude: grid.latitude,
+      longitude: grid.longitude,
+      lat_start: grid.latitude.first,
+      lat_step: latStep,
+      lon_start: grid.longitude.first,
+      lon_step: lonStep,
+      shape: [grid.latitude.count, grid.longitude.count],
+      bounds: [
+        [
+          Math.min(grid.latitude.first, grid.latitude.last) - Math.abs(latStep) / 2,
+          Math.min(grid.longitude.first, grid.longitude.last) - Math.abs(lonStep) / 2,
+        ],
+        [
+          Math.max(grid.latitude.first, grid.latitude.last) + Math.abs(latStep) / 2,
+          Math.max(grid.longitude.first, grid.longitude.last) + Math.abs(lonStep) / 2,
+        ],
+      ],
+    };
   }
 
   function updateAnimationControls() {
@@ -985,18 +1002,29 @@
     else startAnimation();
   }
 
+  function setSelectOptions(select, options, selected) {
+    if (!select) return;
+    select.replaceChildren(...options.map(({ value, label }) => {
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = label;
+      return option;
+    }));
+    select.value = String(selected);
+  }
+
   function populateForecastTimeControl() {
     const select = iconEl("iconForecastTime");
-    const timeline = iconModelState.timeline;
-    if (!select || !timeline?.steps?.length) return;
-    select.replaceChildren();
-    timeline.steps.forEach((step, index) => {
-      const option = document.createElement("option");
-      option.value = String(index);
-      option.textContent = `+${step.forecast_hour} h · ${compactModelTime(step.valid_at)}`;
-      select.append(option);
-    });
-    select.value = String(iconModelState.currentStepIndex);
+    const steps = iconModelState.timeline?.steps || [];
+    if (!steps.length) return;
+    setSelectOptions(
+      select,
+      steps.map((step, index) => ({
+        value: index,
+        label: `+${step.forecast_hour} h · ${compactModelTime(step.valid_at)}`,
+      })),
+      iconModelState.currentStepIndex,
+    );
     updateAnimationControls();
   }
 
@@ -1004,50 +1032,40 @@
     const select = iconEl("iconModelRun");
     if (!select || !iconModelState.meta) return;
     const currentRunAt = iconModelState.meta.run_at;
-    select.replaceChildren();
-    const current = document.createElement("option");
-    current.value = "pages-current";
-    current.textContent = `Current rendered · ${compactModelTime(currentRunAt)}`;
-    select.append(current);
-    for (const run of iconModelState.archiveRuns) {
-      if (!run?.id || run.run_at === currentRunAt) continue;
-      const option = document.createElement("option");
-      option.value = run.id;
-      option.textContent = compactModelTime(run.run_at);
-      select.append(option);
-    }
-    select.value = iconModelState.archiveMode ? iconModelState.archiveRun?.id || "pages-current" : "pages-current";
+    const options = [
+      { value: "pages-current", label: `Current rendered · ${compactModelTime(currentRunAt)}` },
+      ...iconModelState.archiveRuns
+        .filter((run) => run?.id && run.run_at !== currentRunAt)
+        .map((run) => ({ value: run.id, label: compactModelTime(run.run_at) })),
+    ];
+    const selected = iconModelState.archiveMode
+      ? iconModelState.archiveRun?.id || "pages-current"
+      : "pages-current";
+    setSelectOptions(select, options, selected);
   }
 
   function populateArchiveTimeControl(run) {
     const select = iconEl("iconForecastTime");
-    if (!select) return;
-    select.replaceChildren();
     const validTimes = run?.valid_times || [];
     const leads = run?.forecast_hours || [];
-    validTimes.forEach((validAt, index) => {
-      const option = document.createElement("option");
-      option.value = String(index);
-      option.textContent = `+${leads[index] ?? "—"} h · ${compactModelTime(validAt)}`;
-      select.append(option);
-    });
-    select.value = String(iconModelState.archiveTimeIndex);
-    select.disabled = !validTimes.length;
+    setSelectOptions(
+      select,
+      validTimes.map((validAt, index) => ({
+        value: index,
+        label: `+${leads[index] ?? "—"} h · ${compactModelTime(validAt)}`,
+      })),
+      iconModelState.archiveTimeIndex,
+    );
+    if (select) select.disabled = !validTimes.length;
     updateAnimationControls();
-  }
-
-  function clearArchiveGrid() {
-    iconModelState.archiveGrid = null;
   }
 
   function updateArchiveMetaCards(run, grid) {
     if (iconEl("iconMapRun")) iconEl("iconMapRun").textContent = modelTime(run?.run_at);
     if (iconEl("iconMapSatellite")) iconEl("iconMapSatellite").textContent = "— · not archived";
     if (iconEl("iconMapGrid") && grid) {
-      const step = grid.longitude.count > 1
-        ? Math.abs((grid.longitude.last - grid.longitude.first) / (grid.longitude.count - 1))
-        : NaN;
-      iconEl("iconMapGrid").textContent = Number.isFinite(step) ? `${step.toFixed(4)}°` : "—";
+      const step = Math.abs(gridAxisStep(grid.longitude));
+      iconEl("iconMapGrid").textContent = step ? `${step.toFixed(4)}°` : "—";
     }
   }
 
@@ -1066,22 +1084,7 @@
     try {
       const grid = await window.ReadSensorCube.readGrid(run.cube_url);
       if (serial !== iconModelState.archiveSerial || !iconModelState.archiveMode) return;
-      const latStep = grid.latitude.count > 1
-        ? (grid.latitude.last - grid.latitude.first) / (grid.latitude.count - 1)
-        : 0;
-      const lonStep = grid.longitude.count > 1
-        ? (grid.longitude.last - grid.longitude.first) / (grid.longitude.count - 1)
-        : 0;
-      iconModelState.archiveGrid = {
-        latitude: grid.latitude,
-        longitude: grid.longitude,
-        lat_start: grid.latitude.first,
-        lat_step: latStep,
-        lon_start: grid.longitude.first,
-        lon_step: lonStep,
-        shape: [grid.latitude.count, grid.longitude.count],
-        bounds: archiveBounds(grid),
-      };
+      iconModelState.archiveGrid = normalizeArchiveGrid(grid);
       iconModelState.archiveTimeIndex = timeIndex;
       if (timeSelect) timeSelect.value = String(timeIndex);
       updateArchiveMetaCards(run, grid);
@@ -1103,10 +1106,10 @@
     stopAnimation();
     captureLayerPreferences();
     setRenderedLayersVisible(false);
-    clearArchiveGrid();
+    iconModelState.archiveGrid = null;
     iconModelState.archiveMode = true;
     iconModelState.archiveRun = run;
-    iconModelState.archiveTimeIndex = Math.min(1, Math.max(0, (run.valid_times?.length || 1) - 1));
+    iconModelState.archiveTimeIndex = Math.min(1, (run.valid_times?.length || 1) - 1);
     setArchiveUi(true);
     populateModelRunControl();
     populateArchiveTimeControl(run);
@@ -1117,7 +1120,7 @@
   function exitArchiveMode() {
     if (!iconModelState.archiveMode) return;
     iconModelState.archiveSerial += 1;
-    clearArchiveGrid();
+    iconModelState.archiveGrid = null;
     iconModelState.archiveMode = false;
     iconModelState.archiveRun = null;
     iconModelState.archiveTimeIndex = 0;
@@ -1131,23 +1134,16 @@
     setMapStatus("Interactive fields ready", "ok");
   }
 
-  async function switchArchiveTime(index) {
-    if (!iconModelState.archiveMode || !iconModelState.archiveRun?.valid_times?.[index]) return;
-    if (index === iconModelState.archiveTimeIndex && iconModelState.archiveGrid) return;
-    await prepareArchiveTime(index);
-  }
-
   async function loadArchiveRuns() {
     if (!window.ReadSensorCube?.listRuns) return;
     try {
       const payload = await window.ReadSensorCube.listRuns(8);
       iconModelState.archiveRuns = payload.runs || [];
-      populateModelRunControl();
     } catch (error) {
       console.warn("model_runs_load_failed", error);
       iconModelState.archiveRuns = [];
-      populateModelRunControl();
     }
+    populateModelRunControl();
   }
 
   async function switchForecastTime(index, options = {}) {
@@ -1472,7 +1468,7 @@
         const forecastSelect = iconEl("iconForecastTime");
         forecastSelect?.addEventListener("change", () => {
           const index = Number(forecastSelect.value);
-          if (iconModelState.archiveMode) void switchArchiveTime(index);
+          if (iconModelState.archiveMode) void prepareArchiveTime(index);
           else void switchForecastTime(index);
         });
         iconEl("iconModelRun")?.addEventListener("change", (event) => {
