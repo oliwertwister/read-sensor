@@ -12,19 +12,6 @@ async function cubeFor(url) {
 
 async function handle(message) {
   const cube = await cubeFor(message.cubeUrl);
-  if (message.op === "field2d") {
-    const result = await cube.field2d(message.variable, message.prefix || []);
-    const copy = new Float32Array(result.data.length);
-    copy.set(result.data);
-    return {
-      id: message.id,
-      ok: true,
-      shape: result.shape,
-      data: copy.buffer,
-      transfer: [copy.buffer],
-    };
-  }
-
   if (message.op === "window2d") {
     const result = await cube.window2d(
       message.variable,

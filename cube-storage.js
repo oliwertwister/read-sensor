@@ -12,8 +12,8 @@
 
   function ensureWorker() {
     if (workerPromise) return workerPromise;
-    workerPromise = new Promise((resolve, reject) => {
-      const worker = new Worker("cube-reader-worker.js?v=blosc-worker-1");
+    workerPromise = Promise.resolve().then(() => {
+      const worker = new Worker("cube-reader-worker.js?v=blosc-worker-2");
       worker.addEventListener("message", (event) => {
         const message = event.data || {};
         const request = pending.get(message.id);
@@ -23,14 +23,17 @@
         else request.reject(new Error(message.cause ? `${message.error}: ${message.cause}` : message.error));
       });
       worker.addEventListener("error", (event) => {
-        console.warn("model_cube_worker_error", event.message);
-        for (const request of pending.values()) request.reject(new Error(event.message || "Cube worker failed"));
+        const error = new Error(event.message || "Cube worker failed");
+        console.warn("model_cube_worker_error", error);
+        for (const request of pending.values()) request.reject(error);
         pending.clear();
+        worker.terminate();
+        workerPromise = null;
       });
-      resolve(worker);
+      return worker;
     }).catch((error) => {
       workerPromise = null;
-      reject(error);
+      throw error;
     });
     return workerPromise;
   }
@@ -74,14 +77,6 @@
     return statePromise;
   }
 
-  async function readField2d(cubeRelative, variable, prefix = []) {
-    const response = await workerRequest("field2d", cubeRelative, { variable, prefix });
-    return {
-      shape: response.shape,
-      data: new Float32Array(response.data),
-    };
-  }
-
   async function readWindow2d(cubeRelative, variable, prefix, yStart, yStop, xStart, xStop) {
     const response = await workerRequest("window2d", cubeRelative, {
       variable, prefix, yStart, yStop, xStart, xStop,
@@ -103,7 +98,6 @@
   window.ReadSensorCube = Object.freeze({
     connect,
     listRuns,
-    readField2d,
     readWindow2d,
     readGrid,
     readPrefix: READ_PREFIX,
