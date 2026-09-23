@@ -1226,6 +1226,16 @@
     return grid;
   }
 
+  function bilinearValue(q00, q10, q01, q11, tx, ty, fallback) {
+    if (![q00, q10, q01, q11].every(Number.isFinite)) return fallback;
+    return (
+      q00 * (1 - tx) * (1 - ty) +
+      q10 * tx * (1 - ty) +
+      q01 * (1 - tx) * ty +
+      q11 * tx * ty
+    );
+  }
+
   function gridValue(grid, lat, lon, sampling) {
     const { field, data } = grid;
     const height = field.shape[0];
@@ -1249,14 +1259,9 @@
     const q10 = at(y0, x1);
     const q01 = at(y1, x0);
     const q11 = at(y1, x1);
-    if (![q00, q10, q01, q11].every(Number.isFinite)) {
-      return at(Math.round(fy), Math.round(fx));
-    }
-    return (
-      q00 * (1 - tx) * (1 - ty) +
-      q10 * tx * (1 - ty) +
-      q01 * (1 - tx) * ty +
-      q11 * tx * ty
+    return bilinearValue(
+      q00, q10, q01, q11, tx, ty,
+      at(Math.round(fy), Math.round(fx)),
     );
   }
 
@@ -1340,16 +1345,9 @@
     const q10 = at(y0, x1);
     const q01 = at(y1, x0);
     const q11 = at(y1, x1);
-    if (![q00, q10, q01, q11].every(Number.isFinite)) {
-      return Number(at(Math.round(fy), Math.round(fx)));
-    }
-    const tx = fx - x0;
-    const ty = fy - y0;
-    return (
-      q00 * (1 - tx) * (1 - ty) +
-      q10 * tx * (1 - ty) +
-      q01 * (1 - tx) * ty +
-      q11 * tx * ty
+    return bilinearValue(
+      q00, q10, q01, q11, fx - x0, fy - y0,
+      Number(at(Math.round(fy), Math.round(fx))),
     );
   }
 
