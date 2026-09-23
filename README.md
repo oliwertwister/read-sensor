@@ -8,6 +8,7 @@ Public, zero-cost weather/telemetry dashboard combining local sensor data, obser
 ## Documentation
 
 - **Setup, credentials, running and verification:** [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+- **Cross-platform development/testing:** [`docs/CROSS_PLATFORM.md`](docs/CROSS_PLATFORM.md)
 - **Satellite pipeline:** [`satellite/README.md`](satellite/README.md)
 - **ICON-EU / R2 model pipeline:** [`model/README.md`](model/README.md)
 - **Production workflow:** [`.github/workflows/pages.yml`](.github/workflows/pages.yml)

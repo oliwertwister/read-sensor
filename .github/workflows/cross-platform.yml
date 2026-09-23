@@ -1,0 +1,55 @@
+name: Cross-platform checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.py"
+      - "**/*.js"
+      - "worker/schema.sql"
+      - "scripts/verify.py"
+      - ".github/workflows/cross-platform.yml"
+  pull_request:
+    paths:
+      - "**/*.py"
+      - "**/*.js"
+      - "worker/schema.sql"
+      - "scripts/verify.py"
+      - ".github/workflows/cross-platform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    name: portable · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Run portable verification
+        run: python scripts/verify.py --profile portable

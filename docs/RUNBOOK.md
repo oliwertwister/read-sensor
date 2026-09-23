@@ -76,32 +76,21 @@ Markdown-only pushes use the lightweight **Check documentation** workflow instea
 
 ## Local validation
 
-Match Actions with Python 3.13:
+Use Python 3.13 and Node.js 24. The same portable runner works on macOS, Linux and Windows:
 
-```bash
-python3.13 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r model/requirements.txt
-python -m pip install -r satellite/requirements-native.txt
-npm ci --prefix worker
+```text
+python scripts/verify.py --profile portable
 ```
 
-Fast checks:
+With `uv`, the scientific integration tests can run without maintaining a project-local virtualenv:
 
-```bash
-npm test --prefix worker
-node --check app.js
-node --check model-map.js
-node --check cube-storage.js
-node --check cube-reader-worker.js
-node --check data-monitor.js
-node --check geometry-loader.js
-node --check geometry-ui.js
-node synop/test_decode.js
-python model/test_metpy_diagnostics.py
-PYTHONPATH=.:satellite python satellite/test_render_satellite.py
-PYTHONPATH=.:satellite python satellite/test_history.py
+```text
+uv run --python 3.13 \
+  --with-requirements model/requirements.txt \
+  python scripts/verify.py --profile integration
 ```
+
+See [`CROSS_PLATFORM.md`](CROSS_PLATFORM.md) for the Linux workstation, GitHub OS matrix, platform boundaries and future Windows/Linux host plan.
 
 Local rendering:
 
