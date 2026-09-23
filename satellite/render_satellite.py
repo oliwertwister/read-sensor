@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import json
 import os
 import time
@@ -16,6 +17,10 @@ from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from monitor.telemetry import record_transfer
 

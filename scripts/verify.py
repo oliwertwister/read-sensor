@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import os
 import shutil
 import subprocess
 import sys
@@ -67,22 +66,13 @@ def check_python_syntax() -> None:
     print(f"python syntax: OK ({len(files)} tracked files)")
 
 
-def python_test_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["PYTHONPATH"] = os.pathsep.join(
-        filter(None, [str(ROOT), str(ROOT / "satellite"), env.get("PYTHONPATH", "")])
-    )
-    return env
-
-
 def portable_checks(*, require_node: bool) -> None:
     run([sys.executable, "scripts/check_docs.py"])
     run(["git", "diff", "--check"])
     check_python_syntax()
 
-    env = python_test_env()
     for test in PYTHON_TESTS:
-        run([sys.executable, test], env=env)
+        run([sys.executable, test])
 
     node = shutil.which("node")
     if not node:
@@ -98,9 +88,8 @@ def portable_checks(*, require_node: bool) -> None:
 
 
 def integration_checks() -> None:
-    env = python_test_env()
     for test in INTEGRATION_TESTS:
-        run([sys.executable, test], env=env)
+        run([sys.executable, test])
 
 
 def main() -> int:

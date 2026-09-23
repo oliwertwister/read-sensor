@@ -96,12 +96,12 @@ Local rendering:
 
 ```bash
 mkdir -p synop/output satellite/output model/output
-PYTHONPATH=. python synop/update_live.py --catalog synop/stations.json --output synop/output/live.json
+python synop/update_live.py --catalog synop/stations.json --output synop/output/live.json
 python satellite/render_satellite.py --output satellite/output
 
 export EUMETSAT_CONSUMER_KEY='...'
 export EUMETSAT_CONSUMER_SECRET='...'
-PYTHONPATH=.:satellite python satellite/render_satpy.py --output satellite/output
+python satellite/render_satpy.py --output satellite/output
 
 python model/render_icon_products.py \
   --output model/output \

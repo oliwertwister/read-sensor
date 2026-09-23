@@ -32,7 +32,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: .
       READ_SENSOR_TRANSFER_LOG: monitor/raw/transfers.jsonl
       MONITOR_STEP_DIR: monitor/raw/steps
     steps:
@@ -118,8 +117,8 @@ jobs:
 
       - name: Test Meteosat fallback and history handling
         run: |
-          PYTHONPATH=.:satellite python satellite/test_render_satellite.py
-          PYTHONPATH=.:satellite python satellite/test_history.py
+          python satellite/test_render_satellite.py
+          python satellite/test_history.py
 
       - name: Render latest Meteosat products
         run: python monitor/run_with_metrics.py --name "EUMETView WMS baseline" -- python satellite/render_satellite.py --output satellite/output
@@ -137,7 +136,7 @@ jobs:
             echo "::warning::Satpy dependency installation failed; keeping the WMS satellite products."
             exit 0
           fi
-          if ! PYTHONPATH=.:satellite python monitor/run_with_metrics.py --name "Native FCI / Satpy" -- python satellite/render_satpy.py --output satellite/output; then
+          if ! python monitor/run_with_metrics.py --name "Native FCI / Satpy" -- python satellite/render_satpy.py --output satellite/output; then
             echo "::warning::Native FCI/Satpy refresh failed; keeping the WMS satellite products."
           fi
 
