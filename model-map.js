@@ -1226,6 +1226,18 @@
     return grid;
   }
 
+  function interpolationCell(fx, fy, width, height) {
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    return {
+      x0, y0,
+      x1: Math.min(width - 1, x0 + 1),
+      y1: Math.min(height - 1, y0 + 1),
+      tx: fx - x0,
+      ty: fy - y0,
+    };
+  }
+
   function bilinearValue(q00, q10, q01, q11, tx, ty, fallback) {
     if (![q00, q10, q01, q11].every(Number.isFinite)) return fallback;
     return (
@@ -1249,12 +1261,7 @@
       return at(Math.round(fy), Math.round(fx));
     }
 
-    const x0 = Math.floor(fx);
-    const y0 = Math.floor(fy);
-    const x1 = Math.min(width - 1, x0 + 1);
-    const y1 = Math.min(height - 1, y0 + 1);
-    const tx = fx - x0;
-    const ty = fy - y0;
+    const { x0, y0, x1, y1, tx, ty } = interpolationCell(fx, fy, width, height);
     const q00 = at(y0, x0);
     const q10 = at(y0, x1);
     const q01 = at(y1, x0);
@@ -1329,10 +1336,7 @@
       return Number(result.data[0]);
     }
 
-    const x0 = Math.floor(fx);
-    const y0 = Math.floor(fy);
-    const x1 = Math.min(width - 1, x0 + 1);
-    const y1 = Math.min(height - 1, y0 + 1);
+    const { x0, y0, x1, y1, tx, ty } = interpolationCell(fx, fy, width, height);
     const result = await window.ReadSensorCube.readWindow2d(
       run.cube_url,
       "temperature_2m",
@@ -1346,7 +1350,7 @@
     const q01 = at(y1, x0);
     const q11 = at(y1, x1);
     return bilinearValue(
-      q00, q10, q01, q11, fx - x0, fy - y0,
+      q00, q10, q01, q11, tx, ty,
       Number(at(Math.round(fy), Math.round(fx))),
     );
   }
